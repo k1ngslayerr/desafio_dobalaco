@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 // GET /auth/callback
@@ -11,7 +11,7 @@ import { createServerClient } from "@supabase/ssr";
 // on next/headers' internal store, which is NOT propagated to a custom
 // NextResponse.redirect() — causing the browser to arrive at /dashboard with
 // no session cookies and getting bounced back to /login.
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code  = searchParams.get("code");
   const next  = searchParams.get("next") ?? "/dashboard";
