@@ -12,7 +12,7 @@ const ContentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""};
   style-src 'self' 'unsafe-inline';
-  img-src 'self' ${supabaseHostname} blob: data:;
+  img-src 'self' ${supabaseHostname} https://lh3.googleusercontent.com https://*.googleusercontent.com blob: data:;
   connect-src 'self' ${supabaseUrl} wss://${supabaseHostname};
   frame-src 'none';
   font-src 'self';
