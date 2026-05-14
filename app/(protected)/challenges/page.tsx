@@ -17,8 +17,19 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame } from "lucide-react";
+import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame, CalendarClock, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+interface ScheduledChallenge {
+  id: string;
+  title: string;
+  description: string;
+  xp_reward: number;
+  frequency: "daily" | "weekly" | "streak";
+  weekly_target: number;
+  starts_at: string;
+  ends_at: string | null;
+}
 
 interface Challenge {
   id: string;
@@ -52,6 +63,7 @@ type UploadInput = z.infer<typeof uploadSchema>;
 export default function ChallengesPage() {
   const supabase = createClient();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [scheduled, setScheduled] = useState<ScheduledChallenge[]>([]);
   const [currentPenalty, setCurrentPenalty] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Challenge | null>(null);
@@ -95,7 +107,7 @@ export default function ChallengesPage() {
     weekStart.setDate(now.getDate() - daysFromMon);
     const weekStartStr = weekStart.toISOString().split("T")[0];
 
-    const [{ data: chData }, { data: subData }, { data: profileData }] = await Promise.all([
+    const [{ data: chData }, { data: subData }, { data: profileData }, { data: scheduledData }] = await Promise.all([
       supabase
         .from("challenges")
         .select("id, title, description, xp_reward, requires_photo, frequency, weekly_target, quantity_label, xp_per_unit, max_quantity")
@@ -103,7 +115,6 @@ export default function ChallengesPage() {
         .or(`starts_at.is.null,starts_at.lte.${todayStr}`)
         .or(`ends_at.is.null,ends_at.gte.${todayStr}`)
         .order("created_at", { ascending: false }),
-      // Fetch all submissions this week so we can compute weekly counts too
       supabase
         .from("submissions")
         .select("challenge_id, submitted_date")
@@ -114,10 +125,19 @@ export default function ChallengesPage() {
         .select("current_penalty")
         .eq("id", user.id)
         .single(),
+      // Upcoming challenges (starts_at in the future)
+      supabase
+        .from("challenges")
+        .select("id, title, description, xp_reward, frequency, weekly_target, starts_at, ends_at")
+        .eq("is_active", true)
+        .gt("starts_at", todayStr)
+        .order("starts_at", { ascending: true }),
     ]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setCurrentPenalty((profileData as any)?.current_penalty ?? null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setScheduled((scheduledData as any[]) ?? []);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const weekSubs = (subData as any[]) ?? [];
@@ -194,6 +214,18 @@ export default function ChallengesPage() {
     } finally {
       setUploading(false);
     }
+  }
+
+  function daysUntil(dateStr: string): number {
+    const target = new Date(dateStr + "T00:00:00");
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return Math.ceil((target.getTime() - now.getTime()) / 86400000);
+  }
+
+  function fmtDate(dateStr: string): string {
+    const [y, m, d] = dateStr.split("-");
+    return `${d}/${m}/${y.slice(2)}`;
   }
 
   function openModal(ch: Challenge) {
@@ -296,6 +328,62 @@ export default function ChallengesPage() {
             );
           })}
         </div>
+      )}
+
+      {/* ── Agenda ───────────────────────────────────────────── */}
+      {!loading && scheduled.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-5 w-5 text-violet-400" />
+            <h2 className="text-lg font-semibold">Agenda</h2>
+            <Badge variant="outline" className="text-xs text-muted-foreground">{scheduled.length}</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground -mt-1">Desafios programados para começar em breve.</p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {scheduled.map((ch) => {
+              const days = daysUntil(ch.starts_at);
+              return (
+                <Card key={ch.id} className="opacity-70 border-dashed">
+                  <CardHeader className="p-4 pb-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="text-sm line-clamp-2 text-muted-foreground">{ch.title}</CardTitle>
+                      <Badge variant="outline" className="shrink-0 text-muted-foreground border-border">
+                        +{ch.xp_reward} XP
+                      </Badge>
+                    </div>
+                    <CardDescription className="line-clamp-2 text-xs">{ch.description}</CardDescription>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      <Badge variant="outline" className="text-xs text-violet-400 border-violet-500/30 py-0 gap-1">
+                        <CalendarClock className="h-2.5 w-2.5" />
+                        {days === 1 ? "Amanhã" : `Em ${days} dias`} · {fmtDate(ch.starts_at)}
+                      </Badge>
+                      {ch.ends_at && (
+                        <Badge variant="outline" className="text-xs text-muted-foreground py-0">
+                          até {fmtDate(ch.ends_at)}
+                        </Badge>
+                      )}
+                      {ch.frequency === "weekly" && (
+                        <Badge variant="outline" className="text-xs text-amber-400 border-amber-500/30 py-0">
+                          <RotateCcw className="h-2.5 w-2.5 mr-1" />{ch.weekly_target}x/sem
+                        </Badge>
+                      )}
+                      {ch.frequency === "streak" && (
+                        <Badge variant="outline" className="text-xs text-orange-400 border-orange-500/30 py-0">
+                          <Flame className="h-2.5 w-2.5 mr-1" />Sequência
+                        </Badge>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0">
+                    <Badge variant="secondary" className="text-xs gap-1 text-muted-foreground">
+                      <Lock className="h-3 w-3" /> Ainda não disponível
+                    </Badge>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {/* ── Submission modal ──────────────────────────────────── */}
