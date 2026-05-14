@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2 } from "lucide-react";
+import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Challenge {
@@ -52,6 +52,7 @@ type UploadInput = z.infer<typeof uploadSchema>;
 export default function ChallengesPage() {
   const supabase = createClient();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [currentPenalty, setCurrentPenalty] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Challenge | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -94,7 +95,7 @@ export default function ChallengesPage() {
     weekStart.setDate(now.getDate() - daysFromMon);
     const weekStartStr = weekStart.toISOString().split("T")[0];
 
-    const [{ data: chData }, { data: subData }] = await Promise.all([
+    const [{ data: chData }, { data: subData }, { data: profileData }] = await Promise.all([
       supabase
         .from("challenges")
         .select("id, title, description, xp_reward, requires_photo, frequency, weekly_target, quantity_label, xp_per_unit, max_quantity")
@@ -108,7 +109,15 @@ export default function ChallengesPage() {
         .select("challenge_id, submitted_date")
         .eq("user_id", user.id)
         .gte("submitted_date", weekStartStr),
+      supabase
+        .from("users")
+        .select("current_penalty")
+        .eq("id", user.id)
+        .single(),
     ]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setCurrentPenalty((profileData as any)?.current_penalty ?? null);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const weekSubs = (subData as any[]) ?? [];
@@ -199,6 +208,21 @@ export default function ChallengesPage() {
         <h1 className="text-2xl font-bold">Desafios</h1>
         <p className="text-muted-foreground mt-1">Complete desafios para ganhar XP e subir de nível.</p>
       </div>
+
+      {/* ── Penalty banner ───────────────────────────────────── */}
+      {currentPenalty && (
+        <Card className="border-red-500/50 bg-red-500/10">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <Gavel className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-red-400 text-sm">Você tem uma punição ativa</p>
+                <p className="text-sm mt-0.5">{currentPenalty}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-16">
