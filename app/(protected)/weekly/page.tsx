@@ -9,16 +9,18 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Loader2, CalendarDays, AlertTriangle, RotateCcw,
-  CheckCircle2, XCircle, Clock, Gavel, ShieldAlert, FileCheck,
+  CheckCircle2, XCircle, Clock, Gavel, ShieldAlert, FileCheck, Flame,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Challenge {
   id: string;
   title: string;
-  frequency: "daily" | "weekly";
+  frequency: "daily" | "weekly" | "streak";
   weekly_target: number;
   xp_reward: number;
+  starts_at: string | null;
+  ends_at: string | null;
 }
 
 interface AppUser {
@@ -72,6 +74,21 @@ function excusedDaysElapsed(userId: string, excuses: Excuse[], today: string): n
   return excuses.filter((e) => e.user_id === userId && e.excuse_date <= today).length;
 }
 
+// Returns the YYYY-MM-DD strings within the current week that fall inside [startsAt, endsAt] and ≤ today
+function streakDaysThisWeek(weekStart: string, today: string, startsAt: string | null, endsAt: string | null): string[] {
+  const days: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart + "T12:00:00");
+    d.setDate(d.getDate() + i);
+    const dayStr = d.toISOString().split("T")[0];
+    if (dayStr > today) break;
+    if (startsAt && dayStr < startsAt) continue;
+    if (endsAt && dayStr > endsAt) continue;
+    days.push(dayStr);
+  }
+  return days;
+}
+
 function computeCell(
   challengeId: string,
   userId: string,
@@ -79,20 +96,25 @@ function computeCell(
   submissions: Submission[],
   excuses: Excuse[],
   daysElapsed: number,
-  today: string
+  today: string,
+  weekStart: string
 ): CellData {
-  const count = submissions.filter(
-    (s) => s.challenge_id === challengeId && s.user_id === userId
-  ).length;
-
+  let count: number;
   let target: number;
+
   if (challenge.frequency === "weekly") {
-    // Weekly challenges aren't affected by excuses (no per-day requirement)
     target = challenge.weekly_target;
+    count = submissions.filter((s) => s.challenge_id === challengeId && s.user_id === userId).length;
+  } else if (challenge.frequency === "streak") {
+    const days = streakDaysThisWeek(weekStart, today, challenge.starts_at, challenge.ends_at);
+    const excusedInPeriod = excuses.filter((e) => e.user_id === userId && days.includes(e.excuse_date)).length;
+    target = Math.max(0, days.length - excusedInPeriod);
+    count = submissions.filter((s) => s.challenge_id === challengeId && s.user_id === userId && days.includes(s.submitted_date)).length;
   } else {
     // Daily: subtract excused days that have already passed
     const excused = excusedDaysElapsed(userId, excuses, today);
     target = Math.max(0, daysElapsed - excused);
+    count = submissions.filter((s) => s.challenge_id === challengeId && s.user_id === userId).length;
   }
 
   return {
@@ -167,7 +189,7 @@ export default function WeeklyPage() {
     .map((u) => {
       let totalMissed = 0;
       for (const ch of challenges) {
-        const cell = computeCell(ch.id, u.id, ch, submissions, excuses, daysElapsed, today);
+        const cell = computeCell(ch.id, u.id, ch, submissions, excuses, daysElapsed, today, weekStart);
         totalMissed += Math.max(0, cell.target - cell.count);
       }
       return { user: u, totalMissed };
@@ -209,6 +231,7 @@ export default function WeeklyPage() {
         <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-amber-400" />Atrasado</span>
         <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5 text-red-400" />Muito atrasado</span>
         <span className="flex items-center gap-1"><RotateCcw className="h-3.5 w-3.5 text-amber-400" />Semanal</span>
+        <span className="flex items-center gap-1"><Flame className="h-3.5 w-3.5 text-orange-400" />Sequência</span>
         <span className="flex items-center gap-1"><FileCheck className="h-3.5 w-3.5 text-sky-400" />Atestado</span>
       </div>
 
@@ -274,12 +297,17 @@ export default function WeeklyPage() {
                           <RotateCcw className="h-2.5 w-2.5" />{ch.weekly_target}×/sem
                         </span>
                       )}
+                      {ch.frequency === "streak" && (
+                        <span className="text-xs text-orange-400 flex items-center gap-0.5">
+                          <Flame className="h-2.5 w-2.5" />Sequência
+                        </span>
+                      )}
                     </div>
                   </td>
                   {users.map((u) => {
-                    const cell = computeCell(ch.id, u.id, ch, submissions, excuses, daysElapsed, today);
-                    // For daily challenges, check if today specifically is excused
-                    const excusedToday = ch.frequency === "daily" && excuses.some(
+                    const cell = computeCell(ch.id, u.id, ch, submissions, excuses, daysElapsed, today, weekStart);
+                    // For daily/streak challenges, check if today specifically is excused
+                    const excusedToday = (ch.frequency === "daily" || ch.frequency === "streak") && excuses.some(
                       (e) => e.user_id === u.id && e.excuse_date === today
                     );
                     return (

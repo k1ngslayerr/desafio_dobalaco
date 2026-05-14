@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel } from "lucide-react";
+import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Challenge {
@@ -26,7 +26,7 @@ interface Challenge {
   description: string;
   xp_reward: number;
   requires_photo: boolean;
-  frequency: "daily" | "weekly";
+  frequency: "daily" | "weekly" | "streak";
   weekly_target: number;
   quantity_label: string | null;
   xp_per_unit: number | null;
@@ -258,6 +258,11 @@ export default function ChallengesPage() {
                   {isWeekly && (
                     <Badge variant="outline" className="text-xs text-amber-400 border-amber-500/30 py-0">
                       <RotateCcw className="h-2.5 w-2.5 mr-1" />{ch.weeklyCount}/{ch.weekly_target}x semana
+                    </Badge>
+                  )}
+                  {ch.frequency === "streak" && (
+                    <Badge variant="outline" className="text-xs text-orange-400 border-orange-500/30 py-0">
+                      <Flame className="h-2.5 w-2.5 mr-1" />Sequência
                     </Badge>
                   )}
                   {!ch.requires_photo && (

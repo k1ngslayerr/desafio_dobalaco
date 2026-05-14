@@ -15,7 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Loader2, Plus, Pencil, Power, PowerOff, Camera, Hash, RotateCcw, Trash2, CalendarDays } from "lucide-react";
+import { Loader2, Plus, Pencil, Power, PowerOff, Camera, Hash, RotateCcw, Trash2, CalendarDays, Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -27,16 +27,25 @@ import {
 function XpWeeklyHint({
   xpReward,
   isWeekly,
+  isStreak,
   weeklyTarget,
 }: {
   xpReward: number;
   isWeekly: boolean;
+  isStreak: boolean;
   weeklyTarget: number;
 }) {
   const xp = Number(xpReward) || 0;
   if (xp <= 0) return null;
 
-  // Daily: up to 7 check-ins/week. Weekly: weeklyTarget check-ins/week.
+  if (isStreak) {
+    return (
+      <p className="text-xs text-muted-foreground -mt-1">
+        <span className="text-emerald-400 font-medium">+{xp} XP</span> por dia da sequência
+      </p>
+    );
+  }
+
   const checksPerWeek = isWeekly ? (Number(weeklyTarget) || 1) : 7;
   const weeklyTotal = xp * checksPerWeek;
 
@@ -60,7 +69,7 @@ interface Challenge {
   penalty_xp: number;
   is_active: boolean;
   requires_photo: boolean;
-  frequency: "daily" | "weekly";
+  frequency: "daily" | "weekly" | "streak";
   weekly_target: number;
   starts_at: string | null;
   ends_at: string | null;
@@ -106,6 +115,7 @@ export default function AdminChallengesPage() {
   const watchedWeeklyTarget = useWatch({ control, name: "weekly_target" }) ?? 1;
   const hasQuantity = !!(quantityLabel && String(quantityLabel).trim().length > 0);
   const isWeekly = frequency === "weekly";
+  const isStreak = frequency === "streak";
 
   async function load() {
     const res = await fetch("/api/admin/challenges");
@@ -226,6 +236,11 @@ export default function AdminChallengesPage() {
                       {ch.frequency === "weekly" && (
                         <Badge variant="outline" className="text-xs text-amber-400 border-amber-500/30">
                           <RotateCcw className="h-3 w-3 mr-1" />{ch.weekly_target}x/semana
+                        </Badge>
+                      )}
+                      {ch.frequency === "streak" && (
+                        <Badge variant="outline" className="text-xs text-orange-400 border-orange-500/30">
+                          <Flame className="h-3 w-3 mr-1" />Sequência diária
                         </Badge>
                       )}
                       {!ch.requires_photo && (
@@ -359,7 +374,7 @@ export default function AdminChallengesPage() {
               </div>
             </div>
             {/* Hint: total weekly XP based on frequency */}
-            <XpWeeklyHint xpReward={watchedXpReward} isWeekly={isWeekly} weeklyTarget={watchedWeeklyTarget} />
+            <XpWeeklyHint xpReward={watchedXpReward} isWeekly={isWeekly} isStreak={isStreak} weeklyTarget={watchedWeeklyTarget} />
 
             {/* Date range */}
             <div className="grid grid-cols-2 gap-3">
@@ -408,7 +423,7 @@ export default function AdminChallengesPage() {
                   onClick={() => setValue("frequency", "daily")}
                   className={cn(
                     "flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors",
-                    !isWeekly
+                    frequency === "daily"
                       ? "border-violet-500 bg-violet-500/10 text-violet-400"
                       : "border-border text-muted-foreground hover:border-border/80"
                   )}
@@ -427,7 +442,24 @@ export default function AdminChallengesPage() {
                 >
                   Semanal
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setValue("frequency", "streak")}
+                  className={cn(
+                    "flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors",
+                    isStreak
+                      ? "border-orange-500 bg-orange-500/10 text-orange-400"
+                      : "border-border text-muted-foreground hover:border-border/80"
+                  )}
+                >
+                  Sequência
+                </button>
               </div>
+              {isStreak && (
+                <p className="text-xs text-orange-400/80 bg-orange-500/5 border border-orange-500/20 rounded-md px-3 py-2">
+                  Obrigatório todo dia dentro do período. Defina o início e fim acima.
+                </p>
+              )}
               {isWeekly && (
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Quantas vezes por semana?</Label>

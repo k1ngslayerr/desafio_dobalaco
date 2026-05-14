@@ -30,8 +30,8 @@ export const challengeSchema = z.object({
   xp_reward: z.number().int().min(1).max(10000),
   penalty_xp: z.number().int().min(0).max(10000).default(0),
   requires_photo: z.boolean().default(true),
-  // Frequency: 'daily' = once per day; 'weekly' = N times per week (e.g. exercise = 3)
-  frequency: z.enum(["daily", "weekly"]).default("daily"),
+  // Frequency: 'daily' = once per day forever; 'weekly' = N times per week; 'streak' = every day within starts_at→ends_at
+  frequency: z.enum(["daily", "weekly", "streak"]).default("daily"),
   weekly_target: z.number().int().min(1).max(7).default(1),
   // Optional date range — null means "no limit" on that side
   starts_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
