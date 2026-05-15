@@ -28,7 +28,15 @@ export async function GET(request: Request) {
   return NextResponse.json({ challenges: data });
 }
 
-// POST /api/admin/challenges – create challenge
+// Day abbreviations (Sunday=0 … Saturday=6, matching Date.getUTCDay())
+const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+// POST /api/admin/challenges – create challenge(s)
+//
+// When frequency === "daily" AND both starts_at and ends_at are provided and
+// span more than one day, the API auto-expands the range into one challenge
+// per day, appending the day abbreviation to the title (e.g. "Leitura - Seg").
+// Single-day and weekly/streak challenges are created as one row as before.
 export async function POST(request: Request) {
   const { error, status, supabase, user } = await requireAdmin(request);
   if (error) return NextResponse.json({ error }, { status });
@@ -40,6 +48,44 @@ export async function POST(request: Request) {
   const parsed = challengeSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  const { frequency, starts_at, ends_at, title } = parsed.data;
+
+  // ── Multi-day daily challenge → auto-expand ──────────────────────────────
+  if (frequency === "daily" && starts_at && ends_at && starts_at < ends_at) {
+    // Safety cap: refuse absurd ranges
+    const msPerDay = 86_400_000;
+    const spanDays = (new Date(ends_at).getTime() - new Date(starts_at).getTime()) / msPerDay + 1;
+    if (spanDays > 31) {
+      return NextResponse.json({ error: "Intervalo máximo: 31 dias" }, { status: 400 });
+    }
+
+    const rows: Record<string, unknown>[] = [];
+    let cur = new Date(starts_at + "T12:00:00Z");
+    const end = new Date(ends_at + "T12:00:00Z");
+
+    while (cur <= end) {
+      const dayStr  = cur.toISOString().split("T")[0];
+      const dayName = DAY_LABELS[cur.getUTCDay()];
+      rows.push({
+        ...parsed.data,
+        title:      `${title} - ${dayName}`,
+        starts_at:  dayStr,
+        ends_at:    dayStr,
+        created_by: user!.id,
+      });
+      cur = new Date(cur.getTime() + msPerDay);
+    }
+
+    const { data, error: dbError } = await supabase!
+      .from("challenges")
+      .insert(rows)
+      .select();
+
+    if (dbError) return NextResponse.json({ error: "Erro ao criar desafios" }, { status: 500 });
+    return NextResponse.json({ challenges: data, count: data?.length }, { status: 201 });
+  }
+
+  // ── Single challenge (weekly, streak, or single-day daily) ───────────────
   const { data, error: dbError } = await supabase!
     .from("challenges")
     .insert({ ...parsed.data, created_by: user!.id })
@@ -47,5 +93,5 @@ export async function POST(request: Request) {
     .single();
 
   if (dbError) return NextResponse.json({ error: "Erro ao criar desafio" }, { status: 500 });
-  return NextResponse.json({ challenge: data }, { status: 201 });
+  return NextResponse.json({ challenge: data, count: 1 }, { status: 201 });
 }

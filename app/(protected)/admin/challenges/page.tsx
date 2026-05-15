@@ -108,14 +108,28 @@ export default function AdminChallengesPage() {
     defaultValues: DEFAULT_VALUES,
   });
 
-  const requiresPhoto      = useWatch({ control, name: "requires_photo" });
-  const frequency          = useWatch({ control, name: "frequency" });
-  const quantityLabel      = useWatch({ control, name: "quantity_label" });
-  const watchedXpReward    = useWatch({ control, name: "xp_reward" })    ?? 0;
+  const requiresPhoto       = useWatch({ control, name: "requires_photo" });
+  const frequency           = useWatch({ control, name: "frequency" });
+  const quantityLabel       = useWatch({ control, name: "quantity_label" });
+  const watchedXpReward     = useWatch({ control, name: "xp_reward" })     ?? 0;
   const watchedWeeklyTarget = useWatch({ control, name: "weekly_target" }) ?? 1;
+  const watchedStartsAt     = useWatch({ control, name: "starts_at" });
+  const watchedEndsAt       = useWatch({ control, name: "ends_at" });
+
   const hasQuantity = !!(quantityLabel && String(quantityLabel).trim().length > 0);
   const isWeekly = frequency === "weekly";
   const isStreak = frequency === "streak";
+
+  // How many daily challenges will be auto-created from the date range?
+  const multiDayCount = (() => {
+    if (editing) return 0; // editing is always 1:1
+    if (frequency !== "daily") return 0;
+    const s = (watchedStartsAt as string | null | undefined)?.trim();
+    const e = (watchedEndsAt   as string | null | undefined)?.trim();
+    if (!s || !e || s >= e) return 0;
+    const msPerDay = 86_400_000;
+    return Math.round((new Date(e).getTime() - new Date(s).getTime()) / msPerDay) + 1;
+  })();
 
   async function load() {
     const res = await fetch("/api/admin/challenges");
@@ -171,7 +185,17 @@ export default function AdminChallengesPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) { toast.error("Erro ao salvar desafio"); return; }
-      toast.success(editing ? "Desafio atualizado!" : "Desafio criado!");
+      if (editing) {
+        toast.success("Desafio atualizado!");
+      } else {
+        const json = await res.json().catch(() => ({}));
+        const count = (json as { count?: number }).count ?? 1;
+        toast.success(
+          count === 1
+            ? "Desafio criado!"
+            : `${count} desafios criados (1 por dia)!`
+        );
+      }
       setShowForm(false);
       load();
     } finally {
@@ -261,6 +285,8 @@ export default function AdminChallengesPage() {
                           const [y, m, day] = d.split("-");
                           return `${day}/${m}/${y.slice(2)}`;
                         };
+                        // Single-day challenge (starts_at === ends_at): show only one date
+                        const singleDay = ch.starts_at && ch.ends_at && ch.starts_at === ch.ends_at;
                         return (
                           <Badge
                             variant="outline"
@@ -272,9 +298,14 @@ export default function AdminChallengesPage() {
                             )}
                           >
                             <CalendarDays className="h-3 w-3" />
-                            {ch.starts_at ? fmt(ch.starts_at) : "∞"}
-                            {" → "}
-                            {ch.ends_at ? fmt(ch.ends_at) : "∞"}
+                            {singleDay
+                              ? fmt(ch.starts_at!)
+                              : <>
+                                  {ch.starts_at ? fmt(ch.starts_at) : "∞"}
+                                  {" → "}
+                                  {ch.ends_at ? fmt(ch.ends_at) : "∞"}
+                                </>
+                            }
                             {ended && " · Encerrado"}
                             {notStarted && " · Em breve"}
                           </Badge>
@@ -404,6 +435,17 @@ export default function AdminChallengesPage() {
               </div>
             </div>
 
+            {/* Multi-day preview banner */}
+            {multiDayCount > 0 && (
+              <div className="rounded-md bg-violet-500/10 border border-violet-500/30 px-3 py-2.5 text-xs text-violet-300 flex items-start gap-2">
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 mt-0.5 text-violet-400" />
+                <span>
+                  Serão criados <strong>{multiDayCount} desafios</strong> — um por dia,
+                  cada um com o nome do dia no título (ex: <em>{`${(watchedStartsAt as string)?.trim() ? "Título - Seg" : "…"}`}</em>).
+                </span>
+              </div>
+            )}
+
             <Separator />
 
             {/* Frequency */}
@@ -414,7 +456,8 @@ export default function AdminChallengesPage() {
                   Frequência
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Diário = uma submissão por dia. Semanal = N vezes por semana (ex: exercício 3×).
+                  Diário + intervalo de datas = cria 1 desafio por dia automaticamente.
+                  Semanal = N vezes por semana (ex: exercício físico 3×).
                 </p>
               </div>
               <div className="flex gap-2">
@@ -548,7 +591,11 @@ export default function AdminChallengesPage() {
               <Button type="button" variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancelar</Button>
               <Button type="submit" className="flex-1" disabled={submitting}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editing ? "Salvar" : "Criar"}
+                {editing
+                  ? "Salvar"
+                  : multiDayCount > 0
+                    ? `Criar ${multiDayCount} desafios`
+                    : "Criar"}
               </Button>
             </div>
           </form>
