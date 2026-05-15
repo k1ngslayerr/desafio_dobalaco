@@ -2,16 +2,19 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  Loader2, CalendarDays, AlertTriangle, RotateCcw,
-  CheckCircle2, XCircle, Clock, Gavel, ShieldAlert, FileCheck, Flame,
+  Loader2, CalendarDays, AlertTriangle, CheckCircle2, XCircle,
+  Gavel, ShieldAlert, FileCheck, ChevronDown, ChevronRight,
+  Flame, RotateCcw, Minus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface Challenge {
   id: string;
@@ -21,7 +24,7 @@ interface Challenge {
   xp_reward: number;
   starts_at: string | null;
   ends_at: string | null;
-  created_at: string; // ISO timestamp — used as lower bound when starts_at is null
+  created_at: string; // ISO timestamp — lower bound when starts_at is null
 }
 
 interface AppUser {
@@ -47,7 +50,7 @@ interface GroupPenalty {
 interface Excuse {
   id: string;
   user_id: string;
-  excuse_date: string; // YYYY-MM-DD
+  excuse_date: string;
   reason: string | null;
 }
 
@@ -63,96 +66,23 @@ interface WeeklyData {
   groupPenalty: GroupPenalty;
 }
 
-interface CellData {
-  count: number;
-  target: number;
-  isComplete: boolean;
-  isOnTrack: boolean;
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Count excuse dates for a user that fall on given active days
-function excusedOnDays(userId: string, excuses: Excuse[], days: string[]): number {
-  return excuses.filter((e) => e.user_id === userId && days.includes(e.excuse_date)).length;
-}
+// Monday = S, Tuesday = T, ... Sunday = D
+const DAY_INITIALS = ["S", "T", "Q", "Q", "S", "S", "D"];
 
-// Returns the YYYY-MM-DD strings within the current week that fall inside [startsAt, endsAt] and ≤ today
-function streakDaysThisWeek(weekStart: string, today: string, startsAt: string | null, endsAt: string | null): string[] {
-  const days: string[] = [];
-  for (let i = 0; i < 7; i++) {
+function weekDays(weekStart: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart + "T12:00:00");
     d.setDate(d.getDate() + i);
-    const dayStr = d.toISOString().split("T")[0];
-    if (dayStr > today) break;
-    if (startsAt && dayStr < startsAt) continue;
-    if (endsAt && dayStr > endsAt) continue;
-    days.push(dayStr);
-  }
-  return days;
+    return d.toISOString().split("T")[0];
+  });
 }
 
-function computeCell(
-  challengeId: string,
-  userId: string,
-  challenge: Challenge,
-  submissions: Submission[],
-  excuses: Excuse[],
-  today: string,
-  weekStart: string
-): CellData {
-  let count: number;
-  let target: number;
-
-  if (challenge.frequency === "weekly") {
-    target = challenge.weekly_target;
-    count = submissions.filter((s) => s.challenge_id === challengeId && s.user_id === userId).length;
-  } else if (challenge.frequency === "streak") {
-    const days = streakDaysThisWeek(weekStart, today, challenge.starts_at, challenge.ends_at);
-    const excusedInPeriod = excusedOnDays(userId, excuses, days);
-    target = Math.max(0, days.length - excusedInPeriod);
-    count = submissions.filter((s) => s.challenge_id === challengeId && s.user_id === userId && days.includes(s.submitted_date)).length;
-  } else {
-    // Daily: respect starts_at and, when absent, fall back to created_at so a
-    // challenge created mid-week only demands submissions from its creation day
-    // onward — not retroactively from Monday.
-    const effectiveStart =
-      challenge.starts_at ??
-      challenge.created_at.split("T")[0]; // created_at is an ISO timestamp
-    const days = streakDaysThisWeek(weekStart, today, effectiveStart, challenge.ends_at);
-    const excusedInPeriod = excusedOnDays(userId, excuses, days);
-    target = Math.max(0, days.length - excusedInPeriod);
-    count = submissions.filter(
-      (s) => s.challenge_id === challengeId && s.user_id === userId && days.includes(s.submitted_date)
-    ).length;
-  }
-
-  return {
-    count,
-    target,
-    isComplete: target === 0 || count >= target,
-    isOnTrack: target === 0 || count >= Math.ceil(target / 2),
-  };
-}
-
-function CellBadge({ cell }: { cell: CellData }) {
-  const { count, target, isComplete, isOnTrack } = cell;
-  if (isComplete) return (
-    <div className="flex flex-col items-center gap-0.5">
-      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-      <span className="text-xs text-emerald-400 font-medium">{count}/{target}</span>
-    </div>
-  );
-  if (isOnTrack) return (
-    <div className="flex flex-col items-center gap-0.5">
-      <Clock className="h-4 w-4 text-amber-400" />
-      <span className="text-xs text-amber-400 font-medium">{count}/{target}</span>
-    </div>
-  );
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <XCircle className="h-4 w-4 text-red-400" />
-      <span className="text-xs text-red-400 font-medium">{count}/{target}</span>
-    </div>
-  );
+function isChallengeActiveOnDay(ch: Challenge, day: string): boolean {
+  if (ch.starts_at && day < ch.starts_at) return false;
+  if (ch.ends_at && day > ch.ends_at) return false;
+  return true;
 }
 
 function formatWeekRange(start: string, end: string) {
@@ -161,9 +91,132 @@ function formatWeekRange(start: string, end: string) {
   } catch { return `${start} – ${end}`; }
 }
 
+// ── Weekly compliance summary (used for "Atrasados" section) ─────────────────
+
+function activeDaysWindow(ch: Challenge, weekStart: string, today: string): string[] {
+  const effectiveStart =
+    ch.frequency === "daily"
+      ? (ch.starts_at ?? ch.created_at.split("T")[0])
+      : ch.starts_at;
+  const days: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart + "T12:00:00");
+    d.setDate(d.getDate() + i);
+    const dayStr = d.toISOString().split("T")[0];
+    if (dayStr > today) break;
+    if (effectiveStart && dayStr < effectiveStart) continue;
+    if (ch.ends_at && dayStr > ch.ends_at) continue;
+    days.push(dayStr);
+  }
+  return days;
+}
+
+interface CellData { count: number; target: number; isComplete: boolean; isOnTrack: boolean; }
+
+function computeCell(
+  ch: Challenge,
+  userId: string,
+  submissions: Submission[],
+  excuses: Excuse[],
+  today: string,
+  weekStart: string,
+): CellData {
+  let count: number, target: number;
+
+  if (ch.frequency === "weekly") {
+    target = ch.weekly_target;
+    count = submissions.filter((s) => s.challenge_id === ch.id && s.user_id === userId).length;
+  } else {
+    // daily & streak both use the active-window approach
+    const days = activeDaysWindow(ch, weekStart, today);
+    const excusedInPeriod = excuses.filter(
+      (e) => e.user_id === userId && days.includes(e.excuse_date)
+    ).length;
+    target = Math.max(0, days.length - excusedInPeriod);
+    count = submissions.filter(
+      (s) => s.challenge_id === ch.id && s.user_id === userId && days.includes(s.submitted_date)
+    ).length;
+  }
+
+  return {
+    count, target,
+    isComplete: target === 0 || count >= target,
+    isOnTrack: target === 0 || count >= Math.ceil(target / 2),
+  };
+}
+
+// ── Collapsed day cell: X/Y challenges done on a given day ───────────────────
+
+function CollapsedCell({
+  userId, day, today, challenges, submissions, excuses,
+}: {
+  userId: string; day: string; today: string;
+  challenges: Challenge[]; submissions: Submission[]; excuses: Excuse[];
+}) {
+  if (day > today) {
+    return <span className="text-muted-foreground/25 text-xs select-none">—</span>;
+  }
+
+  const activeOnDay = challenges.filter((ch) => isChallengeActiveOnDay(ch, day));
+  const total = activeOnDay.length;
+  if (total === 0) {
+    return <span className="text-muted-foreground/25 text-xs select-none">—</span>;
+  }
+
+  const isExcused = excuses.some((e) => e.user_id === userId && e.excuse_date === day);
+  const done = activeOnDay.filter((ch) =>
+    submissions.some(
+      (s) => s.user_id === userId && s.challenge_id === ch.id && s.submitted_date === day
+    )
+  ).length;
+
+  if (isExcused && done === 0) {
+    return <FileCheck className="h-3.5 w-3.5 text-sky-400 mx-auto" />;
+  }
+
+  return (
+    <span className={cn(
+      "text-xs font-bold tabular-nums",
+      done >= total  ? "text-emerald-400" :
+      done > 0       ? "text-amber-400"   :
+                       "text-red-400"
+    )}>
+      {done}/{total}
+    </span>
+  );
+}
+
+// ── Expanded sub-row cell: ✓ / ✗ / — for one challenge on one day ────────────
+
+function ExpandedCell({
+  userId, challenge, day, today, submissions, excuses,
+}: {
+  userId: string; challenge: Challenge; day: string; today: string;
+  submissions: Submission[]; excuses: Excuse[];
+}) {
+  const isFuture = day > today;
+  const isActive = isChallengeActiveOnDay(challenge, day);
+
+  if (isFuture || !isActive) {
+    return <Minus className="h-3 w-3 text-muted-foreground/20 mx-auto" />;
+  }
+
+  const sub = submissions.find(
+    (s) => s.user_id === userId && s.challenge_id === challenge.id && s.submitted_date === day
+  );
+  const isExcused = excuses.some((e) => e.user_id === userId && e.excuse_date === day);
+
+  if (sub) return <CheckCircle2 className="h-4 w-4 text-emerald-400 mx-auto" />;
+  if (isExcused) return <FileCheck className="h-4 w-4 text-sky-400 mx-auto" />;
+  return <XCircle className="h-3.5 w-3.5 text-red-400/60 mx-auto" />;
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function WeeklyPage() {
-  const [data, setData] = useState<WeeklyData | null>(null);
+  const [data, setData]       = useState<WeeklyData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -177,6 +230,15 @@ export default function WeeklyPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  function toggleUser(userId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
   if (loading) return (
     <div className="flex justify-center py-20">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -187,17 +249,19 @@ export default function WeeklyPage() {
     <div className="py-20 text-center text-muted-foreground">Erro ao carregar dados semanais.</div>
   );
 
-  const { weekStart, weekEnd, today, daysElapsed, challenges, users, submissions, excuses, groupPenalty } = data;
+  const {
+    weekStart, weekEnd, today, daysElapsed,
+    challenges, users, submissions, excuses, groupPenalty,
+  } = data;
 
-  // Users with active individual punishment
+  const days = weekDays(weekStart);
   const penalizedUsers = users.filter((u) => u.current_penalty);
 
-  // Who is behind this week (submission-wise), accounting for excuses
   const behindUsers = users
     .map((u) => {
       let totalMissed = 0;
       for (const ch of challenges) {
-        const cell = computeCell(ch.id, u.id, ch, submissions, excuses, today, weekStart);
+        const cell = computeCell(ch, u.id, submissions, excuses, today, weekStart);
         totalMissed += Math.max(0, cell.target - cell.count);
       }
       return { user: u, totalMissed };
@@ -207,7 +271,8 @@ export default function WeeklyPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+
+      {/* ── Header ────────────────────────────────────────────── */}
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <CalendarDays className="h-6 w-6 text-violet-400" />
@@ -218,7 +283,7 @@ export default function WeeklyPage() {
         </p>
       </div>
 
-      {/* ── Group penalty banner ─────────────────────────────── */}
+      {/* ── Group penalty banner ───────────────────────────────── */}
       {groupPenalty.group_penalty_active && groupPenalty.group_penalty_text && (
         <Card className="border-amber-500/50 bg-amber-500/10">
           <CardContent className="p-4">
@@ -233,17 +298,26 @@ export default function WeeklyPage() {
         </Card>
       )}
 
-      {/* Legend */}
+      {/* ── Legend ────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />Em dia</span>
-        <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-amber-400" />Atrasado</span>
-        <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5 text-red-400" />Muito atrasado</span>
-        <span className="flex items-center gap-1"><RotateCcw className="h-3.5 w-3.5 text-amber-400" />Semanal</span>
-        <span className="flex items-center gap-1"><Flame className="h-3.5 w-3.5 text-orange-400" />Sequência</span>
-        <span className="flex items-center gap-1"><FileCheck className="h-3.5 w-3.5 text-sky-400" />Atestado</span>
+        <span className="flex items-center gap-1">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />Completo
+        </span>
+        <span className="flex items-center gap-1">
+          <XCircle className="h-3.5 w-3.5 text-red-400/70" />Faltou
+        </span>
+        <span className="flex items-center gap-1">
+          <FileCheck className="h-3.5 w-3.5 text-sky-400" />Atestado
+        </span>
+        <span className="flex items-center gap-1">
+          <RotateCcw className="h-3.5 w-3.5 text-amber-400" />Semanal
+        </span>
+        <span className="flex items-center gap-1">
+          <Flame className="h-3.5 w-3.5 text-orange-400" />Sequência
+        </span>
       </div>
 
-      {/* ── Matrix ──────────────────────────────────────────── */}
+      {/* ── Main grid ─────────────────────────────────────────── */}
       {challenges.length === 0 || users.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
@@ -252,96 +326,129 @@ export default function WeeklyPage() {
         </Card>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-max text-sm">
+          <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-border bg-muted/40">
+                {/* sticky name column */}
                 <th className="sticky left-0 z-10 bg-muted/70 backdrop-blur px-4 py-3 text-left font-semibold text-muted-foreground min-w-[160px]">
-                  Desafio
+                  Participante
                 </th>
-                {users.map((u) => {
-                  // Does this user have an excuse today?
-                  const excusedToday = excuses.some(
-                    (e) => e.user_id === u.id && e.excuse_date === today
-                  );
-                  // How many excused days does this user have this week (elapsed)?
-                  const excusedCount = excuses.filter(
-                    (e) => e.user_id === u.id && e.excuse_date <= today
-                  ).length;
+                {days.map((day, i) => {
+                  const isToday  = day === today;
+                  const isFuture = day > today;
                   return (
-                    <th key={u.id} className="px-4 py-3 text-center font-medium min-w-[90px]">
-                      <div className="flex flex-col items-center gap-0.5">
-                        <span className="font-semibold">{u.username}</span>
-                        <span className="text-xs text-muted-foreground font-normal">Nv {u.level}</span>
-                        <div className="flex gap-1 items-center justify-center">
-                          {u.current_penalty && (
-                            <span title={u.current_penalty}>
-                              <Gavel className="h-3 w-3 text-red-400" />
-                            </span>
-                          )}
-                          {excusedCount > 0 && (
-                            <span title={excusedToday ? "Atestado hoje" : `${excusedCount} dia(s) com atestado`}>
-                              <FileCheck className={`h-3 w-3 ${excusedToday ? "text-sky-400" : "text-sky-600"}`} />
-                            </span>
-                          )}
-                        </div>
+                    <th
+                      key={day}
+                      className={cn(
+                        "px-2 py-3 text-center font-semibold w-11",
+                        isToday  ? "text-violet-400"           :
+                        isFuture ? "text-muted-foreground/30"  :
+                                   "text-muted-foreground"
+                      )}
+                    >
+                      <div className="flex flex-col items-center gap-1">
+                        <span>{DAY_INITIALS[i]}</span>
+                        {isToday && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+                        )}
                       </div>
                     </th>
                   );
                 })}
               </tr>
             </thead>
+
             <tbody>
-              {challenges.map((ch, idx) => (
-                <tr
-                  key={ch.id}
-                  className={cn(
-                    "border-b border-border/50 hover:bg-muted/20",
-                    idx % 2 === 1 && "bg-muted/10"
-                  )}
-                >
-                  <td className="sticky left-0 z-10 bg-background/95 backdrop-blur px-4 py-3 font-medium">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="line-clamp-1">{ch.title}</span>
-                      {ch.frequency === "weekly" && (
-                        <span className="text-xs text-amber-400 flex items-center gap-0.5">
-                          <RotateCcw className="h-2.5 w-2.5" />{ch.weekly_target}×/sem
-                        </span>
+              {users.map((u) => {
+                const isExpanded = expanded.has(u.id);
+                return (
+                  <Fragment key={u.id}>
+
+                    {/* ── Collapsed user row ────────────────── */}
+                    <tr
+                      className={cn(
+                        "border-b border-border hover:bg-muted/20 cursor-pointer transition-colors select-none",
+                        isExpanded && "bg-muted/10"
                       )}
-                      {ch.frequency === "streak" && (
-                        <span className="text-xs text-orange-400 flex items-center gap-0.5">
-                          <Flame className="h-2.5 w-2.5" />Sequência
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  {users.map((u) => {
-                    const cell = computeCell(ch.id, u.id, ch, submissions, excuses, today, weekStart);
-                    // For daily/streak challenges, check if today specifically is excused
-                    const excusedToday = (ch.frequency === "daily" || ch.frequency === "streak") && excuses.some(
-                      (e) => e.user_id === u.id && e.excuse_date === today
-                    );
-                    return (
-                      <td key={u.id} className="px-4 py-3 text-center">
-                        {excusedToday && cell.target === 0 ? (
-                          // All elapsed days are excused — show special state
-                          <div className="flex flex-col items-center gap-0.5">
-                            <FileCheck className="h-4 w-4 text-sky-400" />
-                            <span className="text-xs text-sky-400 font-medium">Atestado</span>
-                          </div>
-                        ) : (
-                          <CellBadge cell={cell} />
-                        )}
+                      onClick={() => toggleUser(u.id)}
+                    >
+                      <td className="sticky left-0 z-10 bg-background/95 backdrop-blur px-4 py-3 font-medium">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {isExpanded
+                            ? <ChevronDown  className="h-4 w-4 text-muted-foreground shrink-0" />
+                            : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                          }
+                          <span className="font-semibold truncate">{u.username}</span>
+                          <span className="text-xs text-muted-foreground font-normal shrink-0">
+                            Nv {u.level}
+                          </span>
+                          {u.current_penalty && (
+                            <Gavel
+                              className="h-3 w-3 text-red-400 shrink-0"
+                              title={u.current_penalty}
+                            />
+                          )}
+                        </div>
                       </td>
-                    );
-                  })}
-                </tr>
-              ))}
+                      {days.map((day) => (
+                        <td key={day} className="px-2 py-3 text-center">
+                          <CollapsedCell
+                            userId={u.id}
+                            day={day}
+                            today={today}
+                            challenges={challenges}
+                            submissions={submissions}
+                            excuses={excuses}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+
+                    {/* ── Expanded: one sub-row per challenge ── */}
+                    {isExpanded && challenges.map((ch, ci) => (
+                      <tr
+                        key={`${u.id}__${ch.id}`}
+                        className={cn(
+                          "border-b border-border/30",
+                          ci % 2 === 0 ? "bg-muted/5" : "bg-muted/[0.08]"
+                        )}
+                      >
+                        {/* challenge name, indented */}
+                        <td className="sticky left-0 z-10 bg-background/90 backdrop-blur pl-11 pr-4 py-2 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {ch.frequency === "weekly" && (
+                              <RotateCcw className="h-3 w-3 text-amber-400 shrink-0" />
+                            )}
+                            {ch.frequency === "streak" && (
+                              <Flame className="h-3 w-3 text-orange-400 shrink-0" />
+                            )}
+                            <span className="truncate">{ch.title}</span>
+                          </div>
+                        </td>
+                        {days.map((day) => (
+                          <td key={day} className="px-2 py-2 text-center">
+                            <ExpandedCell
+                              userId={u.id}
+                              challenge={ch}
+                              day={day}
+                              today={today}
+                              submissions={submissions}
+                              excuses={excuses}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* ── Who is behind this week ──────────────────────────── */}
+      {/* ── Who is behind ─────────────────────────────────────── */}
       {behindUsers.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -363,7 +470,10 @@ export default function WeeklyPage() {
                       </div>
                     </div>
                     {r.user.current_penalty && (
-                      <Badge variant="outline" className="text-red-400 border-red-500/30 bg-red-500/10 gap-1 text-xs max-w-[180px] truncate">
+                      <Badge
+                        variant="outline"
+                        className="text-red-400 border-red-500/30 bg-red-500/10 gap-1 text-xs max-w-[180px] truncate"
+                      >
                         <Gavel className="h-3 w-3 shrink-0" />
                         <span className="truncate">{r.user.current_penalty}</span>
                       </Badge>
@@ -376,7 +486,7 @@ export default function WeeklyPage() {
         </section>
       )}
 
-      {/* ── Active individual punishments ────────────────────── */}
+      {/* ── Active individual punishments ─────────────────────── */}
       {penalizedUsers.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -401,7 +511,7 @@ export default function WeeklyPage() {
         </section>
       )}
 
-      {/* ── Active excuses this week ─────────────────────────── */}
+      {/* ── Active excuses ────────────────────────────────────── */}
       {excuses.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -431,11 +541,12 @@ export default function WeeklyPage() {
                                 <Badge
                                   key={e.id}
                                   variant="outline"
-                                  className={`text-xs gap-1 ${
+                                  className={cn(
+                                    "text-xs gap-1",
                                     isPast
                                       ? "text-sky-400 border-sky-500/40"
                                       : "text-muted-foreground border-border"
-                                  }`}
+                                  )}
                                   title={e.reason ?? undefined}
                                 >
                                   {label}
@@ -454,13 +565,18 @@ export default function WeeklyPage() {
         </section>
       )}
 
-      {/* All good state */}
-      {behindUsers.length === 0 && penalizedUsers.length === 0 && !groupPenalty.group_penalty_active && challenges.length > 0 && (
+      {/* ── All good state ────────────────────────────────────── */}
+      {behindUsers.length === 0 &&
+        penalizedUsers.length === 0 &&
+        !groupPenalty.group_penalty_active &&
+        challenges.length > 0 && (
         <Card className="border-emerald-500/20 bg-emerald-500/5">
           <CardContent className="py-6 text-center">
             <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto mb-2" />
             <p className="font-semibold text-emerald-400">Grupo em dia! 🎉</p>
-            <p className="text-xs text-muted-foreground mt-1">Ninguém atrasado e sem punições ativas.</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Ninguém atrasado e sem punições ativas.
+            </p>
           </CardContent>
         </Card>
       )}
