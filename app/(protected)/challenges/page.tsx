@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame, CalendarClock, Lock } from "lucide-react";
+import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame, CalendarClock, Lock, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ScheduledChallenge {
@@ -68,6 +68,10 @@ export default function ChallengesPage() {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Agenda calendar state ─────────────────────────────────
+  const [agendaDay, setAgendaDay] = useState<string | null>(null);
+  const [agendaWeekStart, setAgendaWeekStart] = useState<string | null>(null);
 
   const {
     register,
@@ -182,6 +186,58 @@ export default function ChallengesPage() {
       setUploading(false);
     }
   }
+
+  // ── Agenda helpers ────────────────────────────────────────
+  function addDays(dateStr: string, n: number): string {
+    const d = new Date(dateStr + "T12:00:00");
+    d.setDate(d.getDate() + n);
+    return d.toISOString().split("T")[0];
+  }
+
+  function getMonday(dateStr: string): string {
+    const d = new Date(dateStr + "T12:00:00");
+    const dow = d.getDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    d.setDate(d.getDate() + diff);
+    return d.toISOString().split("T")[0];
+  }
+
+  // Initialize agenda to the week of the first scheduled challenge
+  useEffect(() => {
+    if (scheduled.length > 0 && !agendaDay) {
+      const first = scheduled[0].starts_at;
+      setAgendaDay(first);
+      setAgendaWeekStart(getMonday(first));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduled]);
+
+  const DAY_NAMES = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+  const weekDays = agendaWeekStart
+    ? Array.from({ length: 7 }, (_, i) => addDays(agendaWeekStart, i))
+    : [];
+
+  // Min/max date range across all scheduled challenges
+  const agendaMin = scheduled.length > 0
+    ? scheduled.reduce((m, c) => c.starts_at < m ? c.starts_at : m, scheduled[0].starts_at)
+    : null;
+  const agendaMax = scheduled.length > 0
+    ? scheduled.reduce((m, c) => (c.ends_at ?? "9999-12-31") > m ? (c.ends_at ?? "9999-12-31") : m, "0000-01-01")
+    : null;
+
+  const canPrevWeek = agendaWeekStart && agendaMin
+    ? agendaWeekStart > getMonday(agendaMin)
+    : false;
+  const canNextWeek = agendaWeekStart && agendaMax
+    ? addDays(agendaWeekStart, 6) < agendaMax
+    : false;
+
+  const dayHasChallenges = (day: string) =>
+    scheduled.some(c => c.starts_at <= day && (c.ends_at == null || c.ends_at >= day));
+
+  const selectedDayChallenges = agendaDay
+    ? scheduled.filter(c => c.starts_at <= agendaDay && (c.ends_at == null || c.ends_at >= agendaDay))
+    : [];
 
   function daysUntil(dateStr: string): number {
     const target = new Date(dateStr + "T00:00:00");
@@ -299,36 +355,102 @@ export default function ChallengesPage() {
         </div>
       )}
 
-      {/* ── Agenda ───────────────────────────────────────────── */}
-      {!loading && scheduled.length > 0 && (
-        <section className="space-y-3">
+      {/* ── Agenda (calendar) ────────────────────────────────── */}
+      {!loading && scheduled.length > 0 && agendaWeekStart && (
+        <section className="space-y-4">
+          {/* Header */}
           <div className="flex items-center gap-2">
             <CalendarClock className="h-5 w-5 text-violet-400" />
             <h2 className="text-lg font-semibold">Agenda</h2>
-            <Badge variant="outline" className="text-xs text-muted-foreground">{scheduled.length}</Badge>
           </div>
-          <p className="text-sm text-muted-foreground -mt-1">Desafios programados para começar em breve.</p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {scheduled.map((ch) => {
-              const days = daysUntil(ch.starts_at);
-              return (
-                <Card key={ch.id} className="opacity-70 border-dashed">
+
+          {/* Week strip */}
+          <div className="rounded-xl border border-border bg-card p-3">
+            <div className="flex items-center gap-1">
+              {/* Prev week */}
+              <button
+                onClick={() => {
+                  const prev = addDays(agendaWeekStart, -7);
+                  setAgendaWeekStart(prev);
+                  if (agendaDay && agendaDay < prev) setAgendaDay(prev);
+                }}
+                disabled={!canPrevWeek}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent disabled:opacity-30 disabled:cursor-default"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              {/* Days */}
+              <div className="flex flex-1 gap-1">
+                {weekDays.map((day, i) => {
+                  const hasChall = dayHasChallenges(day);
+                  const isSel = day === agendaDay;
+                  const dayNum = day.split("-")[2];
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => hasChall && setAgendaDay(day)}
+                      disabled={!hasChall}
+                      className={cn(
+                        "flex flex-1 flex-col items-center gap-0.5 rounded-lg py-2 px-1 text-xs transition-colors",
+                        isSel
+                          ? "bg-violet-600 text-white"
+                          : hasChall
+                          ? "hover:bg-accent text-foreground cursor-pointer"
+                          : "text-muted-foreground/30 cursor-default"
+                      )}
+                    >
+                      <span className="font-medium text-[10px] uppercase tracking-wide">{DAY_NAMES[i]}</span>
+                      <span className="text-base font-bold leading-none">{dayNum}</span>
+                      {hasChall && !isSel && (
+                        <span className="mt-0.5 h-1 w-1 rounded-full bg-violet-400" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Next week */}
+              <button
+                onClick={() => {
+                  const next = addDays(agendaWeekStart, 7);
+                  setAgendaWeekStart(next);
+                  if (agendaDay && agendaDay > addDays(next, 6)) setAgendaDay(next);
+                }}
+                disabled={!canNextWeek}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent disabled:opacity-30 disabled:cursor-default"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Month label */}
+            {agendaDay && (
+              <p className="mt-2 text-center text-xs text-muted-foreground capitalize">
+                {new Date(agendaDay + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
+                {" · "}
+                {(() => { const d = daysUntil(agendaDay); return d === 0 ? "hoje" : d === 1 ? "amanhã" : `em ${d} dias`; })()}
+              </p>
+            )}
+          </div>
+
+          {/* Challenges for selected day */}
+          {selectedDayChallenges.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {selectedDayChallenges.map((ch) => (
+                <Card key={ch.id} className="border-dashed opacity-80">
                   <CardHeader className="p-4 pb-2">
                     <div className="flex items-start justify-between gap-2">
-                      <CardTitle className="text-sm line-clamp-2 text-muted-foreground">{ch.title}</CardTitle>
-                      <Badge variant="outline" className="shrink-0 text-muted-foreground border-border">
+                      <CardTitle className="text-sm line-clamp-2">{ch.title}</CardTitle>
+                      <Badge variant="outline" className="shrink-0 text-emerald-400 border-emerald-500/30 bg-emerald-500/10">
                         +{ch.xp_reward} XP
                       </Badge>
                     </div>
                     <CardDescription className="line-clamp-2 text-xs">{ch.description}</CardDescription>
                     <div className="flex flex-wrap gap-1 mt-1.5">
-                      <Badge variant="outline" className="text-xs text-violet-400 border-violet-500/30 py-0 gap-1">
-                        <CalendarClock className="h-2.5 w-2.5" />
-                        {days === 1 ? "Amanhã" : `Em ${days} dias`} · {fmtDate(ch.starts_at)}
-                      </Badge>
-                      {ch.ends_at && (
-                        <Badge variant="outline" className="text-xs text-muted-foreground py-0">
-                          até {fmtDate(ch.ends_at)}
+                      {ch.frequency === "streak" && (
+                        <Badge variant="outline" className="text-xs text-orange-400 border-orange-500/30 py-0">
+                          <Flame className="h-2.5 w-2.5 mr-1" />Sequência diária
                         </Badge>
                       )}
                       {ch.frequency === "weekly" && (
@@ -336,22 +458,24 @@ export default function ChallengesPage() {
                           <RotateCcw className="h-2.5 w-2.5 mr-1" />{ch.weekly_target}x/sem
                         </Badge>
                       )}
-                      {ch.frequency === "streak" && (
-                        <Badge variant="outline" className="text-xs text-orange-400 border-orange-500/30 py-0">
-                          <Flame className="h-2.5 w-2.5 mr-1" />Sequência
+                      {ch.ends_at && (
+                        <Badge variant="outline" className="text-xs text-muted-foreground py-0">
+                          até {fmtDate(ch.ends_at)}
                         </Badge>
                       )}
                     </div>
                   </CardHeader>
                   <CardContent className="p-4 pt-0">
                     <Badge variant="secondary" className="text-xs gap-1 text-muted-foreground">
-                      <Lock className="h-3 w-3" /> Ainda não disponível
+                      <Lock className="h-3 w-3" /> Disponível em {daysUntil(ch.starts_at) === 1 ? "amanhã" : `${daysUntil(ch.starts_at)} dias`}
                     </Badge>
                   </CardContent>
                 </Card>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">Nenhum desafio neste dia.</p>
+          )}
         </section>
       )}
 
