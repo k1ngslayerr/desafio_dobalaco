@@ -5,7 +5,6 @@ export const dynamic = "force-dynamic";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createClient } from "@/lib/supabase/client";
 import { profileSchema, type ProfileInput } from "@/lib/validators";
 import { LevelArt } from "@/components/LevelArt";
 import { XPBar } from "@/components/XPBar";
@@ -33,7 +32,6 @@ interface Profile {
 }
 
 export default function ProfilePage() {
-  const supabase = createClient();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [submissions, setSubmissions] = useState<SubmissionCardData[]>([]);
   const [saving, setSaving] = useState(false);
@@ -50,50 +48,17 @@ export default function ProfilePage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const res = await fetch("/api/profile");
+      if (!res.ok) return;
+      const json = await res.json();
+      const { profile: p, submissions: subs, userId } = json;
 
-      const { data: p } = await supabase
-        .from("users")
-        .select("id, username, full_name, avatar_url, xp, level")
-        .eq("id", user.id)
-        .single();
-      if (!p) return;
-
-      const { data: lvlData } = await supabase
-        .from("level_config")
-        .select("art_tier")
-        .eq("level", p.level)
-        .single();
-
-      const { data: nextLvl } = await supabase
-        .from("level_config")
-        .select("xp_required")
-        .eq("level", p.level + 1)
-        .single();
-
-      setProfile({
-        ...p,
-        art_tier: lvlData?.art_tier ?? 1,
-        next_xp: nextLvl?.xp_required ?? 999999,
-      });
+      setProfile(p);
       reset({ username: p.username, full_name: p.full_name ?? "" });
 
-      // Load approved submissions
-      const { data: subs } = await supabase
-        .from("submissions")
-        .select(`
-          id, photo_url, status, xp_awarded, created_at,
-          user:users(id, username, avatar_url),
-          challenge:challenges(title, xp_reward),
-          reactions(type, user_id)
-        `)
-        .eq("user_id", user.id)
-        .eq("status", "approved")
-        .order("created_at", { ascending: false });
-
       setSubmissions(
-        (subs ?? []).map((s) => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (subs as any[]).map((s) => ({
           id: s.id,
           photo_url: s.photo_url,
           status: s.status as SubmissionCardData["status"],
@@ -106,14 +71,13 @@ export default function ProfilePage() {
             negative: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "negative").length,
           },
           userReaction: (s.reactions as Array<{ type: string; user_id: string }>)
-            .find((r) => r.user_id === user.id)?.type as "positive" | "negative" | null ?? null,
-          currentUserId: user.id,
+            .find((r) => r.user_id === userId)?.type as "positive" | "negative" | null ?? null,
+          currentUserId: userId,
         }))
       );
     }
     load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reset]);
 
   async function onSave(values: ProfileInput) {
     setSaving(true);

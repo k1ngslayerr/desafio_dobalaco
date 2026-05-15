@@ -6,6 +6,38 @@ import { checkImageMime } from "@/lib/security/mime-check";
 import { buildAvatarPath } from "@/lib/security/sanitize";
 import { profileSchema } from "@/lib/validators";
 
+// GET /api/profile – return current user's profile + approved submissions
+export async function GET() {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+  const { data: p } = await supabase
+    .from("users")
+    .select("id, username, full_name, avatar_url, xp, level")
+    .eq("id", user.id)
+    .single();
+
+  if (!p) return NextResponse.json({ error: "Perfil não encontrado" }, { status: 404 });
+
+  const [{ data: lvlData }, { data: nextLvl }, { data: subs }] = await Promise.all([
+    supabase.from("level_config").select("art_tier").eq("level", p.level).single(),
+    supabase.from("level_config").select("xp_required").eq("level", p.level + 1).single(),
+    supabase
+      .from("submissions")
+      .select("id, photo_url, status, xp_awarded, created_at, user:users(id, username, avatar_url), challenge:challenges(title, xp_reward), reactions(type, user_id)")
+      .eq("user_id", user.id)
+      .eq("status", "approved")
+      .order("created_at", { ascending: false }),
+  ]);
+
+  return NextResponse.json({
+    profile: { ...p, art_tier: lvlData?.art_tier ?? 1, next_xp: nextLvl?.xp_required ?? 999999 },
+    submissions: subs ?? [],
+    userId: user.id,
+  });
+}
+
 // PATCH /api/profile – update display name / username
 export async function PATCH(request: Request) {
   const supabase = await createClient();
