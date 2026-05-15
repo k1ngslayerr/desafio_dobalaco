@@ -19,6 +19,8 @@ export async function GET() {
     .gt("starts_at", todayStr)
     .order("starts_at", { ascending: true });
 
-  if (dbError) return NextResponse.json({ error: "Erro ao buscar agenda" }, { status: 500 });
-  return NextResponse.json({ challenges: data ?? [] });
+  return NextResponse.json({
+    challenges: data ?? [],
+    _debug: { todayStr, count: data?.length ?? 0, error: dbError?.message ?? null },
+  });
 }

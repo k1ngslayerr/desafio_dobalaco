@@ -134,6 +134,7 @@ export default function ChallengesPage() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setCurrentPenalty((profileData as any)?.current_penalty ?? null);
+    console.log("[scheduled API response]", scheduledRes);
     setScheduled(scheduledRes?.challenges ?? []);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
