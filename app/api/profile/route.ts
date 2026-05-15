@@ -25,7 +25,7 @@ export async function GET() {
     supabase.from("level_config").select("xp_required").eq("level", p.level + 1).single(),
     supabase
       .from("submissions")
-      .select("id, photo_url, title, description, status, xp_awarded, created_at, user:users(id, username, avatar_url), challenge:challenges(title, xp_reward), reactions(type, user_id)")
+      .select("id, photo_url, title, description, status, xp_awarded, created_at, user:users!user_id(id, username, avatar_url), challenge:challenges(title, xp_reward), reactions(type, user_id)")
       .eq("user_id", user.id)
       .eq("status", "approved")
       .order("created_at", { ascending: false }),

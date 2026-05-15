@@ -47,7 +47,7 @@ export function FeedRealtime({
           const { data } = await supabase
             .from("submissions")
             .select(
-              `*, user:users(id, username, avatar_url),
+              `*, user:users!user_id(id, username, avatar_url),
                reactions(type, user_id)`
             )
             .eq("id", payload.new.id)

@@ -34,27 +34,15 @@ export default async function ChallengeFeedPage({ params }: Props) {
   // Fetch submissions with user and reactions — admin client bypasses RLS so
   // all users' submissions are visible in the feed (not just the viewer's own)
   const adminClient = await createAdminClient();
-  const { data: subs, error: feedError } = await adminClient
+  const { data: subs } = await adminClient
     .from("submissions")
     .select(`
       id, photo_url, title, description, status, xp_awarded, created_at,
-      user:users(id, username, avatar_url),
+      user:users!user_id(id, username, avatar_url),
       reactions(type, user_id)
     `)
     .eq("challenge_id", id)
     .order("created_at", { ascending: false });
-
-  // Fallback: if the detailed query failed (e.g. missing column), try without joins
-  let rawCount: number | null = null;
-  if (feedError) {
-    console.error("[feed] detailed query failed:", feedError.message, feedError.code);
-    const { count } = await adminClient
-      .from("submissions")
-      .select("*", { count: "exact", head: true })
-      .eq("challenge_id", id);
-    rawCount = count;
-    console.error("[feed] raw count for challenge", id, ":", rawCount);
-  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const initialSubmissions: SubmissionCardData[] = ((subs ?? []) as any[]).map((s) => ({
@@ -103,11 +91,6 @@ export default async function ChallengeFeedPage({ params }: Props) {
 
         <p className="text-sm text-muted-foreground">
           {initialSubmissions.length} {initialSubmissions.length !== 1 ? "submissões" : "submissão"}
-          {rawCount !== null && rawCount > 0 && (
-            <span className="ml-2 text-xs text-amber-400">
-              (DB tem {rawCount} — erro na query: {feedError?.message})
-            </span>
-          )}
         </p>
       </div>
 

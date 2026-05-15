@@ -92,7 +92,7 @@ export default async function DashboardPage() {
     .from("submissions")
     .select(`
       id, photo_url, status, xp_awarded, created_at,
-      user:users(id, username, avatar_url),
+      user:users!user_id(id, username, avatar_url),
       challenge:challenges(title, xp_reward),
       reactions(type, user_id)
     `)
