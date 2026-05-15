@@ -19,39 +19,26 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Fetch user profile + level config in parallel
-  const [{ data: profile }, { data: levelCfg }] = await Promise.all([
-    supabase
-      .from("users")
-      .select("id, username, full_name, avatar_url, xp, level, role, current_penalty")
-      .eq("id", user.id)
-      .single(),
-    supabase
-      .from("level_config")
-      .select("level, xp_required, art_tier")
-      .eq("level", 1) // placeholder – we'll get current level below
-      .single(),
-  ]);
+  const { data: profile } = await supabase
+    .from("users")
+    .select("id, username, full_name, avatar_url, xp, level, role, current_penalty")
+    .eq("id", user.id)
+    .single();
 
   if (!profile) redirect("/login");
 
-  // Fetch current level config and next level config
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: currentLevel }, { data: nextLevel }] = await Promise.all([
-    supabase
-      .from("level_config")
-      .select("xp_required, art_tier")
-      .eq("level", profile.level)
-      .single(),
-    supabase
-      .from("level_config")
-      .select("xp_required")
-      .eq("level", profile.level + 1)
-      .single(),
+    supabase.from("level_config").select("xp_required, art_tier").eq("level", profile.level).single(),
+    supabase.from("level_config").select("xp_required").eq("level", profile.level + 1).single(),
   ]);
 
   const artTier = currentLevel?.art_tier ?? 1;
-  const nextXP = nextLevel?.xp_required ?? currentLevel?.xp_required ?? 100;
+  // Within-level XP progress: subtract the threshold at which this level was entered.
+  // Level 1 starts at 0 XP (no prior threshold); higher levels start at their own xp_required.
+  const currentThreshold = profile.level > 1 ? (currentLevel?.xp_required ?? 0) : 0;
+  const nextThreshold = nextLevel?.xp_required ?? (currentThreshold + 100);
+  const levelXP = Math.max(0, Number(profile.xp) - Number(currentThreshold));
+  const levelGap = Math.max(1, Number(nextThreshold) - Number(currentThreshold));
 
   // Fetch active challenges the user hasn't submitted to today (daily) or completed this week (weekly)
   const todayStr = new Date().toISOString().split("T")[0];
@@ -182,8 +169,8 @@ export default async function DashboardPage() {
                 </div>
               </div>
               <XPBar
-                currentXP={profile.xp}
-                requiredXP={nextXP}
+                currentXP={levelXP}
+                requiredXP={levelGap}
                 level={profile.level}
                 className="max-w-sm"
               />

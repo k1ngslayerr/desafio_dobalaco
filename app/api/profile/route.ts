@@ -21,7 +21,7 @@ export async function GET() {
   if (!p) return NextResponse.json({ error: "Perfil não encontrado" }, { status: 404 });
 
   const [{ data: lvlData }, { data: nextLvl }, { data: subs }] = await Promise.all([
-    supabase.from("level_config").select("art_tier").eq("level", p.level).single(),
+    supabase.from("level_config").select("art_tier, xp_required").eq("level", p.level).single(),
     supabase.from("level_config").select("xp_required").eq("level", p.level + 1).single(),
     supabase
       .from("submissions")
@@ -31,8 +31,13 @@ export async function GET() {
       .order("created_at", { ascending: false }),
   ]);
 
+  const currentThreshold = p.level > 1 ? Number(lvlData?.xp_required ?? 0) : 0;
+  const nextThreshold = Number(nextLvl?.xp_required ?? currentThreshold + 100);
+  const levelXp = Math.max(0, Number(p.xp) - currentThreshold);
+  const levelGap = Math.max(1, nextThreshold - currentThreshold);
+
   return NextResponse.json({
-    profile: { ...p, art_tier: lvlData?.art_tier ?? 1, next_xp: nextLvl?.xp_required ?? 999999 },
+    profile: { ...p, art_tier: lvlData?.art_tier ?? 1, level_xp: levelXp, next_xp: levelGap },
     submissions: subs ?? [],
     userId: user.id,
   });

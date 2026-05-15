@@ -28,6 +28,7 @@ interface Profile {
   xp: number;
   level: number;
   art_tier: number;
+  level_xp: number;
   next_xp: number;
 }
 
@@ -172,7 +173,7 @@ export default function ProfilePage() {
                   <p className="text-xs text-emerald-400">{profile.xp.toLocaleString()} XP</p>
                 </div>
               </div>
-              <XPBar currentXP={profile.xp} requiredXP={profile.next_xp} level={profile.level} />
+              <XPBar currentXP={profile.level_xp} requiredXP={profile.next_xp} level={profile.level} />
             </div>
           </div>
         </CardContent>
