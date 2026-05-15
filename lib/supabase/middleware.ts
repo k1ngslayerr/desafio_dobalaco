@@ -25,7 +25,8 @@ export async function updateSession(request: NextRequest) {
               ...options,
               httpOnly: true,
               sameSite: "strict",
-              secure: process.env.NODE_ENV === "production",
+              // [SECURITY] Always Secure. Browsers exempt localhost for dev.
+              secure: true,
             })
           );
         },

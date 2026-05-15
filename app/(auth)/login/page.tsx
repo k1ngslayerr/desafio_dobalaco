@@ -53,16 +53,21 @@ export default function LoginPage() {
   async function onSubmit(values: LoginInput) {
     setIsLoading(true);
     try {
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-
-      const { error } = await supabase.auth.signInWithPassword({
-        email: values.email,
-        password: values.password,
+      // [SECURITY] Login goes through /api/auth/login so we can enforce
+      // per-email rate-limiting before hitting Supabase. The server route
+      // sets the httpOnly session cookie on success.
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
       });
 
-      if (error) {
-        // [SECURITY] Generic message to prevent user enumeration
+      if (res.status === 429) {
+        toast.error("Muitas tentativas. Tente novamente em alguns minutos.");
+        return;
+      }
+      if (!res.ok) {
+        // Generic message — never reveal whether the email exists.
         toast.error("Email ou senha incorretos.");
         return;
       }

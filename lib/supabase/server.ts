@@ -21,7 +21,11 @@ export async function createClient() {
                 ...options,
                 httpOnly: true,
                 sameSite: "strict",
-                secure: process.env.NODE_ENV === "production",
+                // [SECURITY] Always require HTTPS. Browsers exempt localhost,
+                // so this doesn't break local development. Previously this
+                // was gated on NODE_ENV=production, which could ship insecure
+                // cookies if NODE_ENV was misconfigured in a preview env.
+                secure: true,
               })
             );
           } catch {
