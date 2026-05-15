@@ -27,15 +27,23 @@ export async function POST(request: Request) {
 
   const { submission_id, type } = parsed.data;
 
-  // Verify submission exists
+  // Verify submission exists, and that the user is not the author.
+  // [SECURITY] Block self-reactions server-side (client UI also disables this,
+  //  but a direct API call would otherwise let users inflate their own scores).
   const { data: sub } = await supabase
     .from("submissions")
-    .select("id")
+    .select("id, user_id")
     .eq("id", submission_id)
     .maybeSingle();
 
   if (!sub) {
     return NextResponse.json({ error: "Submission não encontrada" }, { status: 404 });
+  }
+  if (sub.user_id === user.id) {
+    return NextResponse.json(
+      { error: "Você não pode reagir à própria submissão" },
+      { status: 403 }
+    );
   }
 
   // Upsert: if reaction exists for this user+submission, update type

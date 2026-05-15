@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { submissionLimiter, getClientIp } from "@/lib/rate-limit";
+import { submissionLimiter } from "@/lib/rate-limit";
 import { checkImageMime } from "@/lib/security/mime-check";
 import { buildStoragePath } from "@/lib/security/sanitize";
 import { z } from "zod";
@@ -142,19 +142,13 @@ export async function POST(request: Request) {
     ? Math.min(parsed.data.quantity * challenge.xp_per_unit, challenge.xp_reward)
     : null; // null = trigger will use xp_reward
 
-  // Bucket is public — store the stable public URL so any user can view it.
-  // Backward-compat: existing rows with relative paths are handled by useSignedUrl.
-  let photoUrl: string | null = null;
-  if (storagePath) {
-    const adminForUrl = await createAdminClient();
-    const { data: { publicUrl } } = adminForUrl.storage.from("submissions").getPublicUrl(storagePath);
-    photoUrl = publicUrl;
-  }
-
+  // [SECURITY] Store the relative storage path, NOT a public URL.
+  // The submissions bucket is private; signed URLs are generated on demand
+  // server-side via /api/storage/sign (which requires authentication).
   const insertPayload: Record<string, unknown> = {
     challenge_id: challenge.id,
     user_id: user.id,
-    photo_url: photoUrl,
+    photo_url: storagePath,
     quantity: parsed.data.quantity ?? null,
     submitted_date: todayStr,
     title: titleRaw,
@@ -173,12 +167,13 @@ export async function POST(request: Request) {
     .single();
 
   if (insertError) {
+    // [SECURITY] Log internally; never leak raw DB error details to the client
     console.error("[submissions] insert error:", insertError.message);
     // Cleanup orphaned upload
     if (storagePath) {
       await adminInsert.storage.from("submissions").remove([storagePath]);
     }
-    return NextResponse.json({ error: "Erro ao salvar submission", detail: insertError.message }, { status: 500 });
+    return NextResponse.json({ error: "Erro ao salvar submission" }, { status: 500 });
   }
 
   // Auto-approve immediately so the DB trigger fires and awards XP right away.

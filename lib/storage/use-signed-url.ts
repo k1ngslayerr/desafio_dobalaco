@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // Buckets configured as public in Supabase — use getPublicUrl (no RLS, no expiry)
-const PUBLIC_BUCKETS = ["avatars", "submissions"];
+// [SECURITY] `submissions` MUST stay private: signed URLs scope access
+// to the lifetime of the token and prevent anonymous internet enumeration.
+const PUBLIC_BUCKETS = ["avatars"];
 
 /**
  * Returns a URL for a Supabase Storage object.
@@ -18,19 +20,25 @@ export function useSignedUrl(
   path: string | null | undefined,
   expiresIn = 3600
 ): string | null {
-  const [url, setUrl] = useState<string | null>(null);
+  // The sync portion: null path or already-resolved https URL.
+  const syncUrl = useMemo<string | null>(() => {
+    if (!path) return null;
+    if (path.startsWith("https://")) return path;
+    return null;
+  }, [path]);
+
+  // The async portion: signed URL fetched from /api/storage/sign or
+  // public URL from the browser client. Keyed by `${bucket}|${path}` so
+  // changes invalidate the previous fetch.
+  const [asyncEntry, setAsyncEntry] = useState<{
+    key: string;
+    url: string | null;
+  } | null>(null);
+
+  const fetchKey = path && !path.startsWith("https://") ? `${bucket}|${path}` : null;
 
   useEffect(() => {
-    if (!path) {
-      setUrl(null);
-      return;
-    }
-
-    // Backward-compat: already a resolved URL
-    if (path.startsWith("https://")) {
-      setUrl(path);
-      return;
-    }
+    if (!fetchKey || !path) return;
 
     let cancelled = false;
 
@@ -39,26 +47,20 @@ export function useSignedUrl(
         const { createClient } = await import("@/lib/supabase/client");
         const supabase = createClient();
         const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-        if (!cancelled && data?.publicUrl) setUrl(data.publicUrl);
+        if (!cancelled && data?.publicUrl) {
+          setAsyncEntry({ key: fetchKey, url: data.publicUrl });
+        }
       } else {
         // Private buckets: call the server-side sign endpoint.
-        // The browser Supabase client has no auth session (cookies are httpOnly,
-        // not accessible to JS), so createSignedUrl() always fails here.
         const params = new URLSearchParams({
           bucket,
           path,
           expiresIn: String(expiresIn),
         });
         const res = await fetch(`/api/storage/sign?${params}`);
-        if (!cancelled) {
-          if (res.ok) {
-            const json = await res.json();
-            console.debug("[useSignedUrl] signed url ok:", json.url?.slice(0, 60));
-            if (json.url) setUrl(json.url as string);
-          } else {
-            const text = await res.text();
-            console.error("[useSignedUrl] sign failed:", res.status, text);
-          }
+        if (!cancelled && res.ok) {
+          const json = await res.json();
+          if (json.url) setAsyncEntry({ key: fetchKey, url: json.url as string });
         }
       }
     })();
@@ -66,7 +68,9 @@ export function useSignedUrl(
     return () => {
       cancelled = true;
     };
-  }, [bucket, path, expiresIn]);
+  }, [fetchKey, bucket, path, expiresIn]);
 
-  return url;
+  if (syncUrl !== null) return syncUrl;
+  if (asyncEntry && asyncEntry.key === fetchKey) return asyncEntry.url;
+  return null;
 }
