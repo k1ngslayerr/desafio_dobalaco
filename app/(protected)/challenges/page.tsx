@@ -193,7 +193,9 @@ export default function ChallengesPage() {
       const json = await res.json();
 
       if (!res.ok) {
-        toast.error(json.error ?? "Erro ao enviar");
+        const msg = json.error ?? "Erro ao enviar";
+        const detail = json.detail ? ` (${json.detail})` : "";
+        toast.error(msg + detail);
         return;
       }
 
