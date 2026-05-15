@@ -88,7 +88,7 @@ export default async function ChallengeFeedPage({ params }: Props) {
         </div>
 
         <p className="text-sm text-muted-foreground">
-          {initialSubmissions.length} submissão{initialSubmissions.length !== 1 ? "ões" : ""}
+          {initialSubmissions.length} {initialSubmissions.length !== 1 ? "submissões" : "submissão"}
         </p>
       </div>
 
