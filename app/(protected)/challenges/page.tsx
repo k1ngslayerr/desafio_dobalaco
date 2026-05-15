@@ -94,6 +94,7 @@ export default function ChallengesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
 
@@ -126,7 +127,9 @@ export default function ChallengesPage() {
         .eq("id", user.id)
         .single(),
       // Upcoming challenges via server API to bypass RLS date restrictions
-      fetch("/api/challenges/scheduled").then((r) => r.json()),
+      fetch("/api/challenges/scheduled")
+        .then((r) => r.json())
+        .catch(() => ({ challenges: [] })),
     ]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -149,7 +152,9 @@ export default function ChallengesPage() {
         weeklyCount: weeklyCountMap[c.id] ?? 0,
       }))
     );
-    setLoading(false);
+    } finally {
+      setLoading(false);
+    }
   }, [supabase]);
 
   useEffect(() => { load(); }, [load]);
@@ -254,6 +259,8 @@ export default function ChallengesPage() {
         <div className="flex justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
+      ) : challenges.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-6">Nenhum desafio ativo no momento. Confira a agenda abaixo.</p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {challenges.map((ch) => {
