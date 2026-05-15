@@ -37,7 +37,7 @@ export default async function ChallengeFeedPage({ params }: Props) {
   const { data: subs } = await adminClient
     .from("submissions")
     .select(`
-      id, photo_url, status, xp_awarded, created_at,
+      id, photo_url, title, description, status, xp_awarded, created_at,
       user:users(id, username, avatar_url),
       reactions(type, user_id)
     `)
@@ -48,6 +48,8 @@ export default async function ChallengeFeedPage({ params }: Props) {
   const initialSubmissions: SubmissionCardData[] = ((subs ?? []) as any[]).map((s) => ({
     id: s.id,
     photo_url: s.photo_url,
+    title: s.title as string | null ?? null,
+    description: s.description as string | null ?? null,
     status: s.status as SubmissionCardData["status"],
     xp_awarded: s.xp_awarded,
     created_at: s.created_at,

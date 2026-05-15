@@ -62,6 +62,8 @@ export default function ProfilePage() {
         (subs as any[]).map((s) => ({
           id: s.id,
           photo_url: s.photo_url,
+          title: s.title as string | null ?? null,
+          description: s.description as string | null ?? null,
           status: s.status as SubmissionCardData["status"],
           xp_awarded: s.xp_awarded,
           created_at: s.created_at,

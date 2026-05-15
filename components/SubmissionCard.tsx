@@ -13,7 +13,9 @@ import { cn } from "@/lib/utils";
 
 export interface SubmissionCardData {
   id: string;
-  photo_url: string;
+  photo_url: string | null;
+  title?: string | null;
+  description?: string | null;
   status: "pending" | "approved" | "contested" | "rejected";
   xp_awarded: number;
   created_at: string;
@@ -50,6 +52,8 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
   const cfg = statusConfig[data.status];
   const StatusIcon = cfg.icon;
   const isApproved = data.status === "approved";
+  const hasPhoto = !!data.photo_url;
+  const hasText = !!(data.title || data.description);
 
   // Private bucket: generate signed URLs on demand
   const signedPhotoUrl  = useSignedUrl("submissions", data.photo_url);
@@ -87,27 +91,44 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
       </CardHeader>
 
       <CardContent className="p-0">
-        {/* Photo – signed URL; skeleton shown while URL is being fetched */}
-        <div className="relative w-full aspect-video bg-muted">
-          {signedPhotoUrl ? (
-            <Image
-              src={signedPhotoUrl}
-              alt={`Submission de ${data.user.username}`}
-              fill
-              className="object-cover"
-              sizes="(max-width: 640px) 100vw, 640px"
-              unoptimized
-            />
-          ) : (
-            <div className="absolute inset-0 animate-pulse bg-muted" />
-          )}
-          {isApproved && (
-            <div className="absolute inset-0 border-2 border-emerald-500/40 rounded pointer-events-none" />
-          )}
-        </div>
+        {/* Photo – only rendered when a photo exists */}
+        {hasPhoto && (
+          <div className="relative w-full aspect-video bg-muted">
+            {signedPhotoUrl ? (
+              <Image
+                src={signedPhotoUrl}
+                alt={`Submission de ${data.user.username}`}
+                fill
+                className="object-cover"
+                sizes="(max-width: 640px) 100vw, 640px"
+                unoptimized
+              />
+            ) : (
+              <div className="absolute inset-0 animate-pulse bg-muted" />
+            )}
+            {isApproved && (
+              <div className="absolute inset-0 border-2 border-emerald-500/40 rounded pointer-events-none" />
+            )}
+          </div>
+        )}
+
+        {/* Title and description */}
+        {hasText && (
+          <div className={cn(
+            "px-4 py-3 space-y-1",
+            hasPhoto ? "border-t border-border" : "bg-muted/20 min-h-[72px]"
+          )}>
+            {data.title && (
+              <p className="font-semibold text-sm leading-snug">{data.title}</p>
+            )}
+            {data.description && (
+              <p className="text-sm text-muted-foreground leading-relaxed">{data.description}</p>
+            )}
+          </div>
+        )}
 
         {/* Footer: reactions + XP badge */}
-        <div className="flex items-center justify-between px-4 py-2">
+        <div className="flex items-center justify-between px-4 py-2 border-t border-border/50">
           <ReactionButtons
             submissionId={data.id}
             positiveCount={data.reactions.positive}

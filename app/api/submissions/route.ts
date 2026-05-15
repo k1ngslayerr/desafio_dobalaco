@@ -9,6 +9,8 @@ import { z } from "zod";
 const createSchema = z.object({
   challenge_id: z.string().uuid(),
   quantity: z.number().int().min(1).optional(),
+  title: z.string().max(120).optional(),
+  description: z.string().max(500).optional(),
 });
 
 // POST /api/submissions – create a new submission (photo optional per challenge config)
@@ -35,11 +37,15 @@ export async function POST(request: Request) {
   const challengeIdRaw = formData.get("challenge_id");
   const file = formData.get("photo") as File | null;
   const quantityRaw = formData.get("quantity");
+  const titleRaw = (formData.get("title") as string | null)?.trim() || null;
+  const descriptionRaw = (formData.get("description") as string | null)?.trim() || null;
 
-  // [SECURITY] Validate challenge_id and optional quantity
+  // [SECURITY] Validate challenge_id and optional fields
   const parsed = createSchema.safeParse({
     challenge_id: challengeIdRaw,
     quantity: quantityRaw ? Number(quantityRaw) : undefined,
+    title: titleRaw ?? undefined,
+    description: descriptionRaw ?? undefined,
   });
   if (!parsed.success) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
@@ -63,6 +69,16 @@ export async function POST(request: Request) {
   // Validate photo requirement
   if (challenge.requires_photo && (!file || !(file instanceof File))) {
     return NextResponse.json({ error: "Foto é obrigatória para este desafio" }, { status: 400 });
+  }
+
+  // When photo is not required, title and description are mandatory
+  if (!challenge.requires_photo) {
+    if (!titleRaw) {
+      return NextResponse.json({ error: "Título é obrigatório para este desafio" }, { status: 400 });
+    }
+    if (!descriptionRaw) {
+      return NextResponse.json({ error: "Descrição é obrigatória para este desafio" }, { status: 400 });
+    }
   }
 
   // Validate quantity requirement
@@ -134,6 +150,8 @@ export async function POST(request: Request) {
     photo_url: storagePath,
     quantity: parsed.data.quantity ?? null,
     submitted_date: todayStr,
+    title: titleRaw,
+    description: descriptionRaw,
   };
   // Pass pre-calculated xp so the trigger can use it
   if (xpAwarded !== null) insertPayload.xp_awarded = xpAwarded;

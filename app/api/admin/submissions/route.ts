@@ -19,7 +19,7 @@ export async function GET() {
   const [{ data: subs }, { data: challenges }] = await Promise.all([
     adminClient
       .from("submissions")
-      .select("id, photo_url, status, xp_awarded, created_at, user:users(id, username, avatar_url), challenge:challenges(id, title, xp_reward), reactions(type)")
+      .select("id, photo_url, title, description, status, xp_awarded, created_at, user:users(id, username, avatar_url), challenge:challenges(id, title, xp_reward), reactions(type)")
       .order("created_at", { ascending: false }),
     adminClient.from("challenges").select("id, title"),
   ]);

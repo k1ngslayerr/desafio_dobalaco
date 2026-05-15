@@ -21,7 +21,9 @@ import { cn } from "@/lib/utils";
 
 interface Submission {
   id: string;
-  photo_url: string;
+  photo_url: string | null;
+  title: string | null;
+  description: string | null;
   status: string;
   xp_awarded: number;
   created_at: string;
@@ -51,6 +53,8 @@ export default function AdminSubmissionsPage() {
       ((subs ?? []) as any[]).map((s) => ({
         id: s.id,
         photo_url: s.photo_url,
+        title: s.title as string | null ?? null,
+        description: s.description as string | null ?? null,
         status: s.status,
         xp_awarded: s.xp_awarded,
         created_at: s.created_at,
@@ -137,10 +141,12 @@ export default function AdminSubmissionsPage() {
             <Card key={sub.id}>
               <CardContent className="p-4">
                 <div className="flex flex-col sm:flex-row gap-4">
-                  {/* Photo thumbnail */}
-                  <div className="relative h-32 w-full sm:w-48 shrink-0 rounded-md overflow-hidden bg-muted">
-                    <Image src={sub.photo_url} alt="Submission" fill className="object-cover" />
-                  </div>
+                  {/* Photo thumbnail (only when photo exists) */}
+                  {sub.photo_url && (
+                    <div className="relative h-32 w-full sm:w-48 shrink-0 rounded-md overflow-hidden bg-muted">
+                      <Image src={sub.photo_url} alt="Submission" fill className="object-cover" />
+                    </div>
+                  )}
 
                   {/* Details */}
                   <div className="flex-1 space-y-2 min-w-0">
@@ -159,6 +165,14 @@ export default function AdminSubmissionsPage() {
                         {sub.status}
                       </Badge>
                     </div>
+
+                    {/* Title and description */}
+                    {(sub.title || sub.description) && (
+                      <div className="space-y-0.5">
+                        {sub.title && <p className="text-sm font-medium">{sub.title}</p>}
+                        {sub.description && <p className="text-xs text-muted-foreground line-clamp-2">{sub.description}</p>}
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">

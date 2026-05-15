@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,7 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame, CalendarClock, Lock, ChevronLeft, ChevronRight } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame, CalendarClock, Lock, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ScheduledChallenge {
@@ -55,11 +57,14 @@ const uploadSchema = z.object({
     )
     .optional(),
   quantity: z.number().int().min(1, "Informe a quantidade").optional(),
+  title: z.string().max(120, "Máximo 120 caracteres").optional(),
+  description: z.string().max(500, "Máximo 500 caracteres").optional(),
 });
 
 type UploadInput = z.infer<typeof uploadSchema>;
 
 export default function ChallengesPage() {
+  const router = useRouter();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [scheduled, setScheduled] = useState<ScheduledChallenge[]>([]);
   const [currentPenalty, setCurrentPenalty] = useState<string | null>(null);
@@ -84,6 +89,8 @@ export default function ChallengesPage() {
 
   const photoFile = watch("photo");
   const quantityValue = watch("quantity");
+  const titleValue = watch("title");
+  const descriptionValue = watch("description");
 
   useEffect(() => {
     if (photoFile?.[0]) {
@@ -98,8 +105,6 @@ export default function ChallengesPage() {
     setLoading(true);
     try {
       // All data fetched server-side so httpOnly session cookies are read correctly.
-      // The browser Supabase client can't read httpOnly cookies, so direct queries
-      // would fail silently (getUser returns null, early return, no data shown).
       const res = await fetch("/api/challenges");
       if (!res.ok) { return; }
       const json = await res.json();
@@ -140,31 +145,49 @@ export default function ChallengesPage() {
   async function onSubmit(values: UploadInput) {
     if (!selected) return;
 
-    // Manual conditional photo validation
-    if (selected.requires_photo && (!values.photo?.[0])) {
+    let hasError = false;
+
+    // Photo validation
+    if (selected.requires_photo && !values.photo?.[0]) {
       setError("photo", { message: "Selecione uma foto" });
-      return;
+      hasError = true;
     }
     if (values.photo?.[0]) {
       const f = values.photo[0];
-      if (f.size > 5 * 1024 * 1024) { setError("photo", { message: "Imagem deve ter no máximo 5 MB" }); return; }
-      if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
+      if (f.size > 5 * 1024 * 1024) { setError("photo", { message: "Imagem deve ter no máximo 5 MB" }); hasError = true; }
+      else if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
         setError("photo", { message: "Formato inválido. Use JPEG, PNG ou WebP" });
-        return;
+        hasError = true;
+      }
+    }
+    // When no photo required, title and description are required
+    if (!selected.requires_photo) {
+      if (!values.title?.trim()) {
+        setError("title", { message: "Título é obrigatório para este desafio" });
+        hasError = true;
+      }
+      if (!values.description?.trim()) {
+        setError("description", { message: "Descrição é obrigatória para este desafio" });
+        hasError = true;
       }
     }
     // Quantity validation
     if (selected.quantity_label && !values.quantity) {
       setError("quantity", { message: `Informe a quantidade de ${selected.quantity_label}` });
-      return;
+      hasError = true;
     }
 
+    if (hasError) return;
+
     setUploading(true);
+    const challengeId = selected.id;
     try {
       const form = new FormData();
-      form.append("challenge_id", selected.id);
+      form.append("challenge_id", challengeId);
       if (values.photo?.[0]) form.append("photo", values.photo[0]);
       if (values.quantity) form.append("quantity", String(values.quantity));
+      if (values.title?.trim()) form.append("title", values.title.trim());
+      if (values.description?.trim()) form.append("description", values.description.trim());
 
       const res = await fetch("/api/submissions", { method: "POST", body: form });
       const json = await res.json();
@@ -181,7 +204,8 @@ export default function ChallengesPage() {
       setSelected(null);
       reset();
       setPreview(null);
-      load();
+      // Navigate to the challenge feed so the user can see all submissions and react
+      router.push(`/challenges/${challengeId}`);
     } finally {
       setUploading(false);
     }
@@ -297,7 +321,7 @@ export default function ChallengesPage() {
             return (
             <Card
               key={ch.id}
-              className={isDone ? "opacity-60" : "hover:border-violet-500/50 transition-colors"}
+              className="hover:border-violet-500/50 transition-colors"
             >
               <CardHeader className="p-4 pb-2">
                 <div className="flex items-start justify-between gap-2">
@@ -336,18 +360,28 @@ export default function ChallengesPage() {
               </CardHeader>
               <CardContent className="p-4 pt-0 flex gap-2">
                 {isDone ? (
-                  <Badge variant="secondary" className="text-xs gap-1">
-                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                    {isWeekly ? "Meta da semana atingida" : "Enviado hoje ✓"}
-                  </Badge>
+                  <>
+                    <Badge variant="secondary" className="text-xs gap-1 flex-1 justify-center py-1.5">
+                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                      {isWeekly ? "Meta da semana atingida" : "Enviado hoje ✓"}
+                    </Badge>
+                    <Link
+                      href={`/challenges/${ch.id}`}
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5 shrink-0")}
+                    >
+                      <Eye className="h-3.5 w-3.5" /> Ver
+                    </Link>
+                  </>
                 ) : (
-                  <Button size="sm" className="flex-1" onClick={() => openModal(ch)}>
-                    <Upload className="mr-1.5 h-3.5 w-3.5" /> Enviar
-                  </Button>
+                  <>
+                    <Button size="sm" className="flex-1" onClick={() => openModal(ch)}>
+                      <Upload className="mr-1.5 h-3.5 w-3.5" /> Enviar
+                    </Button>
+                    <Link href={`/challenges/${ch.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </>
                 )}
-                <Link href={`/challenges/${ch.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
               </CardContent>
             </Card>
             );
@@ -481,14 +515,14 @@ export default function ChallengesPage() {
 
       {/* ── Submission modal ──────────────────────────────────── */}
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Enviar evidência</DialogTitle>
             <DialogDescription>{selected?.title}</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Photo upload — shown if requires_photo OR if user wants to attach a photo anyway */}
+            {/* Photo upload — shown if requires_photo */}
             {selected?.requires_photo ? (
               <>
                 <div
@@ -524,10 +558,51 @@ export default function ChallengesPage() {
                 <CameraOff className="h-5 w-5 text-sky-400 shrink-0" />
                 <div>
                   <p className="text-sm font-medium text-sky-400">Sem foto necessária</p>
-                  <p className="text-xs text-muted-foreground">Este desafio não requer evidência fotográfica</p>
+                  <p className="text-xs text-muted-foreground">Descreva sua conquista abaixo</p>
                 </div>
               </div>
             )}
+
+            {/* Title */}
+            <div className="space-y-1.5">
+              <Label htmlFor="sub-title">
+                Título
+                {!selected?.requires_photo && <span className="text-destructive ml-0.5">*</span>}
+                <span className="text-muted-foreground font-normal ml-1 text-xs">
+                  ({(titleValue ?? "").length}/120)
+                </span>
+              </Label>
+              <Input
+                id="sub-title"
+                placeholder="Ex: Treino matinal de hoje"
+                maxLength={120}
+                {...register("title")}
+              />
+              {errors.title && (
+                <p className="text-xs text-destructive">{errors.title.message as string}</p>
+              )}
+            </div>
+
+            {/* Description */}
+            <div className="space-y-1.5">
+              <Label htmlFor="sub-description">
+                Descrição
+                {!selected?.requires_photo && <span className="text-destructive ml-0.5">*</span>}
+                <span className="text-muted-foreground font-normal ml-1 text-xs">
+                  ({(descriptionValue ?? "").length}/500)
+                </span>
+              </Label>
+              <Textarea
+                id="sub-description"
+                placeholder="Descreva o que você fez..."
+                maxLength={500}
+                rows={3}
+                {...register("description")}
+              />
+              {errors.description && (
+                <p className="text-xs text-destructive">{errors.description.message as string}</p>
+              )}
+            </div>
 
             {/* Quantity input — shown for quantifiable challenges */}
             {selected?.quantity_label && (
