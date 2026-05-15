@@ -206,8 +206,9 @@ export default function ChallengesPage() {
       setSelected(null);
       reset();
       setPreview(null);
-      // Navigate to the challenge feed so the user can see all submissions and react
-      router.push(`/challenges/${challengeId}`);
+      // Hard navigation to the challenge feed — bypasses Next.js router cache
+      // so the server re-fetches submissions and the new one appears immediately
+      window.location.href = `/challenges/${challengeId}`;
     } finally {
       setUploading(false);
     }
