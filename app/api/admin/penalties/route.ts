@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { adminLimiter } from "@/lib/rate-limit";
 import { z } from "zod";
 
 const penaltySchema = z.object({
@@ -11,18 +12,22 @@ const penaltySchema = z.object({
 async function requireAdmin() {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return { error: "Não autorizado", status: 401, supabase: null };
+  if (error || !user) return { error: "Não autorizado", status: 401, supabase: null, adminUser: null };
 
   const { data: row } = await supabase.from("users").select("role").eq("id", user.id).single();
-  if (row?.role !== "admin") return { error: "Acesso negado", status: 403, supabase: null };
+  if (row?.role !== "admin") return { error: "Acesso negado", status: 403, supabase: null, adminUser: null };
 
-  return { error: null, status: 200, supabase };
+  return { error: null, status: 200, supabase, adminUser: user };
 }
 
 // PATCH /api/admin/penalties – assign or clear an individual penalty for a user
 export async function PATCH(request: Request) {
-  const { error, status, supabase } = await requireAdmin();
+  const { error, status, supabase, adminUser } = await requireAdmin();
   if (error) return NextResponse.json({ error }, { status });
+
+  // [SECURITY] Rate limit by admin user id
+  const { success: rateOk } = await adminLimiter.limit(adminUser!.id);
+  if (!rateOk) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
 
   const body = await request.json().catch(() => null);
   const parsed = penaltySchema.safeParse(body);

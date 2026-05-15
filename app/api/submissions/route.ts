@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { submissionLimiter } from "@/lib/rate-limit";
 import { checkImageMime } from "@/lib/security/mime-check";
 import { buildStoragePath } from "@/lib/security/sanitize";
+import { appDateStr } from "@/lib/date";
 import { z } from "zod";
 
 const createSchema = z.object({
@@ -51,8 +52,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
   }
 
-  // Compute today's date in UTC (consistent with DB DEFAULT CURRENT_DATE)
-  const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  // [SECURITY] Compute today's date in the app's timezone (BRT), NOT UTC.
+  // The DB unique constraint on (challenge_id, user_id, submitted_date)
+  // depends on this — if we used UTC, a user in BRT could submit twice
+  // on the same local day (once before, once after UTC midnight) and
+  // double-collect XP.
+  const todayStr = appDateStr();
 
   // Fetch challenge to know its config
   const { data: challenge } = await supabase

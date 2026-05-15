@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { adminLimiter } from "@/lib/rate-limit";
 import { submissionStatusSchema } from "@/lib/validators";
 import { z } from "zod";
 
@@ -18,6 +19,10 @@ async function requireAdmin() {
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { error, status, supabase, user } = await requireAdmin();
   if (error) return NextResponse.json({ error }, { status });
+
+  // [SECURITY] Rate limit by admin user id
+  const { success: rateOk } = await adminLimiter.limit(user!.id);
+  if (!rateOk) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
 
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) {

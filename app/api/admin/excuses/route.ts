@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { adminLimiter } from "@/lib/rate-limit";
 import { z } from "zod";
 
 async function requireAdmin() {
@@ -22,21 +23,19 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const weekStartParam = searchParams.get("week_start");
 
-  // Default to current week Monday
+  // Default to current week Monday in app timezone (matches submissions)
   let weekStart: string;
-  if (weekStartParam) {
+  if (weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam)) {
     weekStart = weekStartParam;
   } else {
-    const now = new Date();
-    const dow = now.getDay();
-    const daysFromMon = dow === 0 ? 6 : dow - 1;
-    const mon = new Date(now);
-    mon.setDate(now.getDate() - daysFromMon);
-    weekStart = mon.toISOString().split("T")[0];
+    const { appWeekStartStr } = await import("@/lib/date");
+    weekStart = appWeekStartStr();
   }
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(new Date(weekStart).getDate() + 6);
-  const weekEndStr = weekEnd.toISOString().split("T")[0];
+  const [wsy, wsm, wsd] = weekStart.split("-").map(Number);
+  const weekEnd = new Date(Date.UTC(wsy, wsm - 1, wsd));
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+  const weekEndStr =
+    `${weekEnd.getUTCFullYear()}-${String(weekEnd.getUTCMonth() + 1).padStart(2, "0")}-${String(weekEnd.getUTCDate()).padStart(2, "0")}`;
 
   const { data, error: dbError } = await supabase
     .from("user_excuses")
@@ -59,6 +58,10 @@ const createSchema = z.object({
 export async function POST(request: Request) {
   const { error, status, supabase, adminUser } = await requireAdmin();
   if (error) return NextResponse.json({ error }, { status });
+
+  // [SECURITY] Rate limit by admin user id
+  const { success: rateOk } = await adminLimiter.limit(adminUser!.id);
+  if (!rateOk) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
 
   const body = await request.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
@@ -88,12 +91,21 @@ export async function POST(request: Request) {
 
 // DELETE /api/admin/excuses?id=UUID – remove a specific excuse
 export async function DELETE(request: Request) {
-  const { error, status, supabase } = await requireAdmin();
+  const { error, status, supabase, adminUser } = await requireAdmin();
   if (error) return NextResponse.json({ error }, { status });
+
+  // [SECURITY] Rate limit by admin user id
+  const { success: rateOk } = await adminLimiter.limit(adminUser!.id);
+  if (!rateOk) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
+
+  // [SECURITY] Validate UUID shape to avoid garbage queries
+  if (!z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+  }
 
   const { error: dbError } = await supabase!
     .from("user_excuses")

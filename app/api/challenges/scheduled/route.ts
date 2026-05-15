@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { appDateStr } from "@/lib/date";
 
 // GET /api/challenges/scheduled
 // Returns active challenges whose starts_at is in the future (agenda view).
@@ -9,7 +10,7 @@ export async function GET() {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = appDateStr();
 
   const adminClient = await createAdminClient();
   const { data, error: dbError } = await adminClient

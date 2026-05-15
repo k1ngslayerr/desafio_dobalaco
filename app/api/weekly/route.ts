@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { appDateStr, appWeekStartStr, appDaysElapsedThisWeek } from "@/lib/date";
 
 // GET /api/weekly
 // Returns challenges × users submission matrix for the current week.
@@ -12,20 +13,17 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  // ── Current week bounds (Monday–Sunday) ───────────────────
-  const now = new Date();
-  const dow = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-  const daysFromMon = dow === 0 ? 6 : dow - 1;
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - daysFromMon);
-  weekStart.setHours(0, 0, 0, 0);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-
-  const weekStartStr = weekStart.toISOString().split("T")[0];
-  const weekEndStr   = weekEnd.toISOString().split("T")[0];
-  const todayStr     = now.toISOString().split("T")[0];
-  const daysElapsed  = daysFromMon + 1; // Mon=1 ... Sun=7
+  // ── Current week bounds (Monday–Sunday) in app timezone ─────────
+  // [SECURITY] Match the timezone used by submissions/route.ts so the
+  // week filter doesn't show stale or missing data near midnight UTC.
+  const weekStartStr = appWeekStartStr();
+  const [wsy, wsm, wsd] = weekStartStr.split("-").map(Number);
+  const weekEnd = new Date(Date.UTC(wsy, wsm - 1, wsd));
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+  const weekEndStr =
+    `${weekEnd.getUTCFullYear()}-${String(weekEnd.getUTCMonth() + 1).padStart(2, "0")}-${String(weekEnd.getUTCDate()).padStart(2, "0")}`;
+  const todayStr    = appDateStr();
+  const daysElapsed = appDaysElapsedThisWeek();
 
   // ── Parallel fetches ─────────────────────────────────────
   const [

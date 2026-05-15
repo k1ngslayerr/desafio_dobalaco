@@ -49,6 +49,10 @@ export async function PATCH(request: Request) {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
+  // [SECURITY] Rate limit profile updates to prevent username squatting bursts
+  const { success: rateOk } = await submissionLimiter.limit(`profile:${user.id}`);
+  if (!rateOk) return NextResponse.json({ error: "Muitas tentativas" }, { status: 429 });
+
   const body = await request.json().catch(() => null);
   const parsed = profileSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -94,8 +98,18 @@ export async function POST(request: Request) {
   const storagePath = buildAvatarPath(user.id, file.name);
   const adminClient = await createAdminClient();
 
-  // Remove old avatar if exists then upload new
-  await adminClient.storage.from("avatars").remove([`${user.id}`]).catch(() => {});
+  // [SECURITY/STORAGE] List the user's avatar folder and remove EVERY old
+  // file before uploading the new one. The previous version tried to remove
+  // a single object named literally `<userId>` (no extension), which never
+  // matched anything — old avatars accumulated forever in storage and stayed
+  // publicly retrievable via their stable URLs.
+  const { data: existing } = await adminClient.storage
+    .from("avatars")
+    .list(user.id);
+  if (existing && existing.length > 0) {
+    const stalePaths = existing.map((f) => `${user.id}/${f.name}`);
+    await adminClient.storage.from("avatars").remove(stalePaths).catch(() => {});
+  }
 
   const { error: uploadError } = await adminClient.storage
     .from("avatars")

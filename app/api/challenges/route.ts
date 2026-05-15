@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { appDateStr, appWeekStartStr } from "@/lib/date";
 
 // GET /api/challenges
 // Returns active challenges + user's weekly submissions + current penalty + scheduled (agenda).
@@ -9,13 +10,11 @@ export async function GET() {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const now = new Date();
-  const todayStr = now.toISOString().split("T")[0];
-  const dow = now.getDay();
-  const daysFromMon = dow === 0 ? 6 : dow - 1;
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - daysFromMon);
-  const weekStartStr = weekStart.toISOString().split("T")[0];
+  // [SECURITY] Use the app timezone so the "is this challenge active today?"
+  // and "did the user submit this week?" filters match what submissions/route.ts
+  // writes as `submitted_date`. See lib/date.ts.
+  const todayStr = appDateStr();
+  const weekStartStr = appWeekStartStr();
 
   const adminClient = await createAdminClient();
 

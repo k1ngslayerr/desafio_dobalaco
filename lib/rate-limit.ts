@@ -42,9 +42,8 @@ export const adminLimiter = new Ratelimit({
   analytics: false,
 });
 
-export function getClientIp(request: Request): string {
-  // [SECURITY] Trust x-forwarded-for only behind Vercel's edge proxy
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return "unknown";
-}
+// [SECURITY] We deliberately do NOT rate-limit by client IP. x-forwarded-for
+// is user-controllable in many deploy topologies (forging the leftmost IP
+// is trivial unless you implement Vercel-specific edge-IP parsing), and all
+// our limited routes already require an authenticated session — keying by
+// user.id is both safer and more meaningful.

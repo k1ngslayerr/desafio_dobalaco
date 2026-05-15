@@ -41,13 +41,11 @@ export default async function DashboardPage() {
   const levelGap = Math.max(1, Number(nextThreshold) - Number(currentThreshold));
 
   // Fetch active challenges the user hasn't submitted to today (daily) or completed this week (weekly)
-  const todayStr = new Date().toISOString().split("T")[0];
-  const now = new Date();
-  const dow = now.getDay();
-  const daysFromMon = dow === 0 ? 6 : dow - 1;
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - daysFromMon);
-  const weekStartStr = weekStart.toISOString().split("T")[0];
+  // [SECURITY] Use app-timezone dates so the filter matches `submitted_date`
+  // written by /api/submissions. See lib/date.ts.
+  const { appDateStr, appWeekStartStr } = await import("@/lib/date");
+  const todayStr = appDateStr();
+  const weekStartStr = appWeekStartStr();
 
   const { data: userSubmissions } = await supabase
     .from("submissions")
