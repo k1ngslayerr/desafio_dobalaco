@@ -107,7 +107,7 @@ export default function ChallengesPage() {
     weekStart.setDate(now.getDate() - daysFromMon);
     const weekStartStr = weekStart.toISOString().split("T")[0];
 
-    const [{ data: chData }, { data: subData }, { data: profileData }, { data: scheduledData }] = await Promise.all([
+    const [{ data: chData }, { data: subData }, { data: profileData }, scheduledRes] = await Promise.all([
       supabase
         .from("challenges")
         .select("id, title, description, xp_reward, requires_photo, frequency, weekly_target, quantity_label, xp_per_unit, max_quantity")
@@ -125,19 +125,13 @@ export default function ChallengesPage() {
         .select("current_penalty")
         .eq("id", user.id)
         .single(),
-      // Upcoming challenges (starts_at in the future)
-      supabase
-        .from("challenges")
-        .select("id, title, description, xp_reward, frequency, weekly_target, starts_at, ends_at")
-        .eq("is_active", true)
-        .gt("starts_at", todayStr)
-        .order("starts_at", { ascending: true }),
+      // Upcoming challenges via server API to bypass RLS date restrictions
+      fetch("/api/challenges/scheduled").then((r) => r.json()),
     ]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setCurrentPenalty((profileData as any)?.current_penalty ?? null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setScheduled((scheduledData as any[]) ?? []);
+    setScheduled(scheduledRes?.challenges ?? []);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const weekSubs = (subData as any[]) ?? [];
