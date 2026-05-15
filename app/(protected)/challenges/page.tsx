@@ -4,7 +4,6 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import React from "react";
-import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import Image from "next/image";
 import { useForm } from "react-hook-form";
@@ -61,7 +60,6 @@ const uploadSchema = z.object({
 type UploadInput = z.infer<typeof uploadSchema>;
 
 export default function ChallengesPage() {
-  const supabase = createClient();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [scheduled, setScheduled] = useState<ScheduledChallenge[]>([]);
   const [currentPenalty, setCurrentPenalty] = useState<string | null>(null);
@@ -95,68 +93,37 @@ export default function ChallengesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setLoading(false); return; }
+      // All data fetched server-side so httpOnly session cookies are read correctly.
+      // The browser Supabase client can't read httpOnly cookies, so direct queries
+      // would fail silently (getUser returns null, early return, no data shown).
+      const res = await fetch("/api/challenges");
+      if (!res.ok) { return; }
+      const json = await res.json();
 
-    const todayStr = new Date().toISOString().split("T")[0];
+      const { challenges: chData, submissions: subData, currentPenalty: penalty, scheduled: sched, todayStr } = json;
 
-    // Current week Monday
-    const now = new Date();
-    const dow = now.getDay(); // 0=Sun..6=Sat
-    const daysFromMon = dow === 0 ? 6 : dow - 1;
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - daysFromMon);
-    const weekStartStr = weekStart.toISOString().split("T")[0];
+      setCurrentPenalty(penalty ?? null);
+      setScheduled(sched ?? []);
 
-    const [{ data: chData }, { data: subData }, { data: profileData }, scheduledRes] = await Promise.all([
-      supabase
-        .from("challenges")
-        .select("id, title, description, xp_reward, requires_photo, frequency, weekly_target, quantity_label, xp_per_unit, max_quantity")
-        .eq("is_active", true)
-        .or(`starts_at.is.null,starts_at.lte.${todayStr}`)
-        .or(`ends_at.is.null,ends_at.gte.${todayStr}`)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("submissions")
-        .select("challenge_id, submitted_date")
-        .eq("user_id", user.id)
-        .gte("submitted_date", weekStartStr),
-      supabase
-        .from("users")
-        .select("current_penalty")
-        .eq("id", user.id)
-        .single(),
-      // Upcoming challenges via server API to bypass RLS date restrictions
-      fetch("/api/challenges/scheduled")
-        .then((r) => r.json())
-        .catch(() => ({ challenges: [] })),
-    ]);
+      const weekSubs = (subData as { challenge_id: string; submitted_date: string }[]) ?? [];
+      const todaySet = new Set(weekSubs.filter((s) => s.submitted_date === todayStr).map((s) => s.challenge_id));
+      const weeklyCountMap: Record<string, number> = {};
+      for (const s of weekSubs) {
+        weeklyCountMap[s.challenge_id] = (weeklyCountMap[s.challenge_id] ?? 0) + 1;
+      }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setCurrentPenalty((profileData as any)?.current_penalty ?? null);
-    console.log("[scheduled API response]", scheduledRes);
-    setScheduled(scheduledRes?.challenges ?? []);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const weekSubs = (subData as any[]) ?? [];
-    const todaySet = new Set(weekSubs.filter((s) => s.submitted_date === todayStr).map((s) => s.challenge_id));
-    const weeklyCountMap: Record<string, number> = {};
-    for (const s of weekSubs) {
-      weeklyCountMap[s.challenge_id] = (weeklyCountMap[s.challenge_id] ?? 0) + 1;
-    }
-
-    setChallenges(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ((chData ?? []) as any[]).map((c) => ({
-        ...c,
-        submittedToday: todaySet.has(c.id),
-        weeklyCount: weeklyCountMap[c.id] ?? 0,
-      }))
-    );
+      setChallenges(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ((chData ?? []) as any[]).map((c) => ({
+          ...c,
+          submittedToday: todaySet.has(c.id),
+          weeklyCount: weeklyCountMap[c.id] ?? 0,
+        }))
+      );
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
