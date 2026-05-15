@@ -35,7 +35,7 @@ export async function GET() {
   ] = await Promise.all([
     supabase
       .from("challenges")
-      .select("id, title, frequency, weekly_target, xp_reward, starts_at, ends_at")
+      .select("id, title, frequency, weekly_target, xp_reward, starts_at, ends_at, created_at")
       .eq("is_active", true)
       .or(`starts_at.is.null,starts_at.lte.${todayStr}`)
       .or(`ends_at.is.null,ends_at.gte.${todayStr}`)

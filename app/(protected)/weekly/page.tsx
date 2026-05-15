@@ -21,6 +21,7 @@ interface Challenge {
   xp_reward: number;
   starts_at: string | null;
   ends_at: string | null;
+  created_at: string; // ISO timestamp — used as lower bound when starts_at is null
 }
 
 interface AppUser {
@@ -69,9 +70,9 @@ interface CellData {
   isOnTrack: boolean;
 }
 
-// Count excuse dates for a user that have already passed (excuse_date <= today)
-function excusedDaysElapsed(userId: string, excuses: Excuse[], today: string): number {
-  return excuses.filter((e) => e.user_id === userId && e.excuse_date <= today).length;
+// Count excuse dates for a user that fall on given active days
+function excusedOnDays(userId: string, excuses: Excuse[], days: string[]): number {
+  return excuses.filter((e) => e.user_id === userId && days.includes(e.excuse_date)).length;
 }
 
 // Returns the YYYY-MM-DD strings within the current week that fall inside [startsAt, endsAt] and ≤ today
@@ -95,7 +96,6 @@ function computeCell(
   challenge: Challenge,
   submissions: Submission[],
   excuses: Excuse[],
-  daysElapsed: number,
   today: string,
   weekStart: string
 ): CellData {
@@ -107,14 +107,22 @@ function computeCell(
     count = submissions.filter((s) => s.challenge_id === challengeId && s.user_id === userId).length;
   } else if (challenge.frequency === "streak") {
     const days = streakDaysThisWeek(weekStart, today, challenge.starts_at, challenge.ends_at);
-    const excusedInPeriod = excuses.filter((e) => e.user_id === userId && days.includes(e.excuse_date)).length;
+    const excusedInPeriod = excusedOnDays(userId, excuses, days);
     target = Math.max(0, days.length - excusedInPeriod);
     count = submissions.filter((s) => s.challenge_id === challengeId && s.user_id === userId && days.includes(s.submitted_date)).length;
   } else {
-    // Daily: subtract excused days that have already passed
-    const excused = excusedDaysElapsed(userId, excuses, today);
-    target = Math.max(0, daysElapsed - excused);
-    count = submissions.filter((s) => s.challenge_id === challengeId && s.user_id === userId).length;
+    // Daily: respect starts_at and, when absent, fall back to created_at so a
+    // challenge created mid-week only demands submissions from its creation day
+    // onward — not retroactively from Monday.
+    const effectiveStart =
+      challenge.starts_at ??
+      challenge.created_at.split("T")[0]; // created_at is an ISO timestamp
+    const days = streakDaysThisWeek(weekStart, today, effectiveStart, challenge.ends_at);
+    const excusedInPeriod = excusedOnDays(userId, excuses, days);
+    target = Math.max(0, days.length - excusedInPeriod);
+    count = submissions.filter(
+      (s) => s.challenge_id === challengeId && s.user_id === userId && days.includes(s.submitted_date)
+    ).length;
   }
 
   return {
@@ -189,7 +197,7 @@ export default function WeeklyPage() {
     .map((u) => {
       let totalMissed = 0;
       for (const ch of challenges) {
-        const cell = computeCell(ch.id, u.id, ch, submissions, excuses, daysElapsed, today, weekStart);
+        const cell = computeCell(ch.id, u.id, ch, submissions, excuses, today, weekStart);
         totalMissed += Math.max(0, cell.target - cell.count);
       }
       return { user: u, totalMissed };
@@ -256,7 +264,9 @@ export default function WeeklyPage() {
                     (e) => e.user_id === u.id && e.excuse_date === today
                   );
                   // How many excused days does this user have this week (elapsed)?
-                  const excusedCount = excusedDaysElapsed(u.id, excuses, today);
+                  const excusedCount = excuses.filter(
+                    (e) => e.user_id === u.id && e.excuse_date <= today
+                  ).length;
                   return (
                     <th key={u.id} className="px-4 py-3 text-center font-medium min-w-[90px]">
                       <div className="flex flex-col items-center gap-0.5">
@@ -305,7 +315,7 @@ export default function WeeklyPage() {
                     </div>
                   </td>
                   {users.map((u) => {
-                    const cell = computeCell(ch.id, u.id, ch, submissions, excuses, daysElapsed, today, weekStart);
+                    const cell = computeCell(ch.id, u.id, ch, submissions, excuses, today, weekStart);
                     // For daily/streak challenges, check if today specifically is excused
                     const excusedToday = (ch.frequency === "daily" || ch.frequency === "streak") && excuses.some(
                       (e) => e.user_id === u.id && e.excuse_date === today
