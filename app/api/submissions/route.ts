@@ -142,12 +142,19 @@ export async function POST(request: Request) {
     ? Math.min(parsed.data.quantity * challenge.xp_per_unit, challenge.xp_reward)
     : null; // null = trigger will use xp_reward
 
-  // [SECURITY] Bucket is private — store path, not publicUrl.
-  // Signed URLs are generated on demand by the client via useSignedUrl().
+  // Bucket is public — store the stable public URL so any user can view it.
+  // Backward-compat: existing rows with relative paths are handled by useSignedUrl.
+  let photoUrl: string | null = null;
+  if (storagePath) {
+    const adminForUrl = await createAdminClient();
+    const { data: { publicUrl } } = adminForUrl.storage.from("submissions").getPublicUrl(storagePath);
+    photoUrl = publicUrl;
+  }
+
   const insertPayload: Record<string, unknown> = {
     challenge_id: challenge.id,
     user_id: user.id,
-    photo_url: storagePath,
+    photo_url: photoUrl,
     quantity: parsed.data.quantity ?? null,
     submitted_date: todayStr,
     title: titleRaw,

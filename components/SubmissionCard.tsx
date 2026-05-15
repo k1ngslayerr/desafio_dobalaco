@@ -78,7 +78,7 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
               {data.challenge.title}
             </span>
           )}
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground" suppressHydrationWarning>
             {formatDistanceToNow(new Date(data.created_at), { addSuffix: true, locale: ptBR })}
           </span>
         </div>
