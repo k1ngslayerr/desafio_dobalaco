@@ -105,19 +105,18 @@ INSERT INTO public.app_settings (id) VALUES (TRUE)
   ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- POPULATE level_config (1000 levels, exponential progression)
--- XP(N) = ROUND(100 * 1.15^(N-1))   art_tier = CEIL(level / 10)
--- LEAST + numeric cap keeps levels 281-1000 inside BIGINT range.
+-- POPULATE level_config (100 levels, quadratic progression)
+-- xp_required(n) = 100*(n-1) + 10*(n-1)²
+-- Gap grows from 110 XP (level 1→2) to 2070 XP (level 99→100).
+-- At ~1,000 XP/week: level 10 ≈ 1.7 weeks, level 100 ≈ 2 years.
+-- art_tier = CEIL(level / 10)
 -- ============================================================
 INSERT INTO public.level_config (level, xp_required, art_tier)
 SELECT
-  n AS level,
-  LEAST(
-    ROUND(100.0 * POWER(1.15::numeric, n - 1)),
-    9200000000000000000::numeric
-  )::bigint AS xp_required,
-  CEIL(n / 10.0)::integer AS art_tier
-FROM generate_series(1, 1000) AS n;
+  n                                                       AS level,
+  (100 * (n - 1) + 10 * (n - 1) * (n - 1))::bigint      AS xp_required,
+  CEIL(n / 10.0)::integer                                  AS art_tier
+FROM generate_series(1, 100) AS n;
 
 -- ============================================================
 -- FUNCTION: recalculate user level after XP changes
