@@ -383,10 +383,9 @@ export default function WeeklyPage() {
                             Nv {u.level}
                           </span>
                           {u.current_penalty && (
-                            <Gavel
-                              className="h-3 w-3 text-red-400 shrink-0"
-                              title={u.current_penalty}
-                            />
+                            <span title={u.current_penalty}>
+                              <Gavel className="h-3 w-3 text-red-400 shrink-0" />
+                            </span>
                           )}
                         </div>
                       </td>
