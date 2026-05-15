@@ -3,7 +3,6 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import Image from "next/image";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -32,7 +31,6 @@ interface Submission {
 }
 
 export default function AdminSubmissionsPage() {
-  const supabase = createClient();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("pending");
@@ -43,18 +41,9 @@ export default function AdminSubmissionsPage() {
 
   async function load() {
     setLoading(true);
-    const [{ data: subs }, { data: chs }] = await Promise.all([
-      supabase
-        .from("submissions")
-        .select(`
-          id, photo_url, status, xp_awarded, created_at,
-          user:users(id, username, avatar_url),
-          challenge:challenges(id, title, xp_reward),
-          reactions(type)
-        `)
-        .order("created_at", { ascending: false }),
-      supabase.from("challenges").select("id, title"),
-    ]);
+    const res = await fetch("/api/admin/submissions");
+    if (!res.ok) { setLoading(false); return; }
+    const { submissions: subs, challenges: chs } = await res.json();
 
     setChallenges(chs ?? []);
     setSubmissions(
