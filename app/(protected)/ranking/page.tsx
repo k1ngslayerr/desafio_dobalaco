@@ -2,8 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useEffect, useState } from "react";
 import { LevelArt } from "@/components/LevelArt";
 import { SignedAvatar } from "@/components/SignedAvatar";
 import { Badge } from "@/components/ui/badge";
@@ -27,52 +26,39 @@ const medalConfig = [
   { label: "🥉", className: "text-amber-600 bg-amber-600/10 border-amber-600/30" },
 ];
 
+// Polling cadence: a Postgres-Realtime subscription on `users` would be
+// blocked by RLS (TO authenticated) since the browser client runs as anon
+// — cookies are httpOnly. Polling /api/ranking every 20s keeps the
+// leaderboard near-live without a websocket.
+const POLL_INTERVAL_MS = 20_000;
+
 export default function RankingPage() {
-  const supabase = useRef(createClient()).current;
   const [ranking, setRanking] = useState<RankEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [connected, setConnected] = useState(false);
-
-  async function fetchRanking() {
-    const { data } = await supabase
-      .from("users")
-      // [SECURITY] Only select public-safe fields
-      .select("id, username, full_name, avatar_url, xp, level")
-      .order("xp", { ascending: false })
-      .limit(100);
-
-    if (!data) return;
-
-    // Fetch art tiers in bulk
-    const levels = [...new Set(data.map((u) => u.level))];
-    const { data: levelData } = await supabase
-      .from("level_config")
-      .select("level, art_tier")
-      .in("level", levels);
-
-    const tierMap = new Map(levelData?.map((l) => [l.level, l.art_tier]) ?? []);
-
-    setRanking(
-      data.map((u) => ({ ...u, art_tier: tierMap.get(u.level) ?? 1 }))
-    );
-    setLoading(false);
-  }
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function fetchRanking() {
+      try {
+        const res = await fetch("/api/ranking", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled) setRanking(json.ranking ?? []);
+      } catch {
+        // network blip — try again on the next tick
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
     fetchRanking();
+    const id = setInterval(fetchRanking, POLL_INTERVAL_MS);
 
-    // Realtime: listen for XP/level updates on the users table
-    const channel = supabase
-      .channel("ranking")
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "users" },
-        () => { fetchRanking(); }
-      )
-      .subscribe((status) => setConnected(status === "SUBSCRIBED"));
-
-    return () => { supabase.removeChannel(channel); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, []);
 
   return (
@@ -83,13 +69,6 @@ export default function RankingPage() {
             <Trophy className="h-6 w-6 text-yellow-400" /> Ranking
           </h1>
           <p className="text-muted-foreground mt-1">Top jogadores por XP acumulado</p>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {connected ? (
-            <><span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /> Ao vivo</>
-          ) : (
-            <><Loader2 className="h-3 w-3 animate-spin" /> Conectando…</>
-          )}
         </div>
       </div>
 

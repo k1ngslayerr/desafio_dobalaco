@@ -26,10 +26,9 @@ export function FeedRealtime({
   const [connected, setConnected] = useState(false);
   const supabase = useRef(createClient()).current;
 
-  useEffect(() => {
-    // Keep initial submissions in sync if parent re-renders
-    setSubmissions(initialSubmissions);
-  }, [initialSubmissions]);
+  // `initialSubmissions` is provided once by the server-rendered parent and
+  // does not change at runtime; we intentionally don't sync it back into
+  // state to avoid clobbering new realtime arrivals.
 
   useEffect(() => {
     const channel = supabase
@@ -43,16 +42,15 @@ export function FeedRealtime({
           filter: `challenge_id=eq.${challengeId}`,
         },
         async (payload) => {
-          // Fetch full submission with user + reactions
-          const { data } = await supabase
-            .from("submissions")
-            .select(
-              `*, user:users!user_id(id, username, avatar_url),
-               reactions(type, user_id)`
-            )
-            .eq("id", payload.new.id)
-            .single();
-
+          // [SECURITY] Fetch via the server route. The browser client cannot
+          // resolve the user:users!user_id(...) join: users SELECT requires
+          // the authenticated role and the browser is effectively anon
+          // (auth cookies are httpOnly).
+          const res = await fetch(`/api/submissions/${payload.new.id}`, {
+            cache: "no-store",
+          });
+          if (!res.ok) return;
+          const { submission: data } = await res.json();
           if (!data) return;
 
           const newCard: SubmissionCardData = {

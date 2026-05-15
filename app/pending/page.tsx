@@ -2,79 +2,67 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Zap, Clock, LogOut, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
+// Poll every 10s. A Supabase Realtime subscription on `users` would be
+// blocked by RLS for the browser client (anon, since auth cookies are
+// httpOnly), so we use a server-route poll instead.
+const POLL_INTERVAL_MS = 10_000;
+
 export default function PendingPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
-    let userId: string | null = null;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
 
-    async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.replace("/login"); return; }
-      userId = user.id;
-
-      // ── Sanity check: are we already approved? ───────────────
-      const { data } = await supabase
-        .from("users")
-        .select("status")
-        .eq("id", userId)
-        .single();
-
-      if (data?.status === "active") {
-        router.replace("/dashboard");
-        return;
+    async function poll() {
+      try {
+        const res = await fetch("/api/profile/status", { cache: "no-store" });
+        if (res.status === 401) {
+          router.replace("/login");
+          return true;
+        }
+        if (!res.ok) return false;
+        const { status } = await res.json();
+        if (status === "active" && !cancelled) {
+          toast.success("Conta aprovada! Bem-vindo ao DesafioHub 🎉");
+          router.replace("/dashboard");
+          return true;
+        }
+      } catch {
+        // transient network error — try again next tick
       }
-
-      // ── Realtime: listen for the admin's approval ────────────
-      channel = supabase
-        .channel(`pending-user-${userId}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "users",
-            filter: `id=eq.${userId}`,
-          },
-          (payload) => {
-            if ((payload.new as { status: string }).status === "active") {
-              toast.success("Conta aprovada! Bem-vindo ao DesafioHub 🎉");
-              router.replace("/dashboard");
-            }
-          }
-        )
-        .subscribe();
+      return false;
     }
 
-    init();
+    poll();
+    const id = setInterval(() => {
+      if (!cancelled) poll();
+    }, POLL_INTERVAL_MS);
 
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      cancelled = true;
+      clearInterval(id);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [router]);
 
   async function handleManualCheck() {
     setChecking(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.replace("/login"); return; }
-
-      const { data } = await supabase
-        .from("users")
-        .select("status")
-        .eq("id", user.id)
-        .single();
-
-      if (data?.status === "active") {
+      const res = await fetch("/api/profile/status", { cache: "no-store" });
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (!res.ok) {
+        toast.error("Erro ao verificar. Tente novamente.");
+        return;
+      }
+      const { status } = await res.json();
+      if (status === "active") {
         toast.success("Conta aprovada! Bem-vindo ao DesafioHub 🎉");
         router.replace("/dashboard");
       } else {
