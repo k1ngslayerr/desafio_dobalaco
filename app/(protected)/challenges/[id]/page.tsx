@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { FeedRealtime } from "@/components/FeedRealtime";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -31,8 +31,10 @@ export default async function ChallengeFeedPage({ params }: Props) {
 
   if (!challenge) notFound();
 
-  // Fetch submissions with user and reactions
-  const { data: subs } = await supabase
+  // Fetch submissions with user and reactions — admin client bypasses RLS so
+  // all users' submissions are visible in the feed (not just the viewer's own)
+  const adminClient = await createAdminClient();
+  const { data: subs } = await adminClient
     .from("submissions")
     .select(`
       id, photo_url, status, xp_awarded, created_at,
