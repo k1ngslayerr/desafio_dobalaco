@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 
+// Buckets configured as public in Supabase — use getPublicUrl (no RLS, no expiry)
+const PUBLIC_BUCKETS = ["avatars"];
+
 /**
- * Generates a temporary signed URL for a private Supabase Storage object.
- * Returns null while the URL is being fetched.
- *
- * Backward-compat: if `path` already starts with "https://", returns as-is
- * (handles any legacy rows that stored full public URLs).
+ * Returns a URL for a Supabase Storage object.
+ * Public buckets (e.g. avatars) use getPublicUrl so any user can see any avatar.
+ * Private buckets use createSignedUrl (expires after expiresIn seconds).
+ * Backward-compat: if `path` already starts with "https://", returns as-is.
  */
 export function useSignedUrl(
   bucket: string,
@@ -33,11 +35,15 @@ export function useSignedUrl(
     (async () => {
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
-      const { data } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(path, expiresIn);
-      if (!cancelled && data?.signedUrl) {
-        setUrl(data.signedUrl);
+
+      if (PUBLIC_BUCKETS.includes(bucket)) {
+        const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+        if (!cancelled && data?.publicUrl) setUrl(data.publicUrl);
+      } else {
+        const { data } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(path, expiresIn);
+        if (!cancelled && data?.signedUrl) setUrl(data.signedUrl);
       }
     })();
 

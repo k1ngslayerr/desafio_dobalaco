@@ -137,8 +137,6 @@ export default function ChallengesPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setCurrentPenalty((profileData as any)?.current_penalty ?? null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    console.log("[agenda] scheduledData:", scheduledData, "todayStr:", todayStr);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setScheduled((scheduledData as any[]) ?? []);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

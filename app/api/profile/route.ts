@@ -69,14 +69,15 @@ export async function POST(request: Request) {
 
   if (uploadError) return NextResponse.json({ error: "Erro no upload" }, { status: 500 });
 
-  // [SECURITY] Bucket is private — store path, not publicUrl.
-  // Signed URLs are generated on demand by the client via useSignedUrl().
+  // avatars bucket is public — store the stable public URL so any user can view it
+  const { data: { publicUrl } } = adminClient.storage.from("avatars").getPublicUrl(storagePath);
+
   const { error: dbError } = await supabase
     .from("users")
-    .update({ avatar_url: storagePath })
+    .update({ avatar_url: publicUrl })
     .eq("id", user.id);
 
   if (dbError) return NextResponse.json({ error: "Erro ao salvar avatar" }, { status: 500 });
 
-  return NextResponse.json({ avatar_url: storagePath });
+  return NextResponse.json({ avatar_url: publicUrl });
 }
