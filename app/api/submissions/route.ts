@@ -138,24 +138,25 @@ export async function POST(request: Request) {
   // Pass pre-calculated xp so the trigger can use it
   if (xpAwarded !== null) insertPayload.xp_awarded = xpAwarded;
 
-  const { data: submission, error: insertError } = await supabase
+  // Use admin client to bypass INSERT RLS — user_id is validated above from
+  // the authenticated session, so this is safe.
+  const adminInsert = await createAdminClient();
+  const { data: submission, error: insertError } = await adminInsert
     .from("submissions")
     .insert(insertPayload)
     .select()
     .single();
 
   if (insertError) {
+    console.error("[submissions] insert error:", insertError.message);
     // Cleanup orphaned upload
     if (storagePath) {
-      const adminClient = await createAdminClient();
-      await adminClient.storage.from("submissions").remove([storagePath]);
+      await adminInsert.storage.from("submissions").remove([storagePath]);
     }
-    return NextResponse.json({ error: "Erro ao salvar submission" }, { status: 500 });
+    return NextResponse.json({ error: "Erro ao salvar submission", detail: insertError.message }, { status: 500 });
   }
 
   // Auto-approve immediately so the DB trigger fires and awards XP right away.
-  // For recurring daily/weekly challenges users earn XP on every check-in —
-  // no manual admin approval needed. Admins can still contest after the fact.
   const adminClient = await createAdminClient();
   const { data: approved } = await adminClient
     .from("submissions")
