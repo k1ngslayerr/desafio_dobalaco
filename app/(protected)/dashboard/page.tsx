@@ -3,12 +3,12 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LevelArt } from "@/components/LevelArt";
 import { XPBar } from "@/components/XPBar";
-import { SubmissionCard, type SubmissionCardData } from "@/components/SubmissionCard";
 import { SignedAvatar } from "@/components/SignedAvatar";
+import { DashboardFeed } from "@/components/DashboardFeed";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Swords, ArrowRight, Gavel } from "lucide-react";
+import { Swords, ArrowRight, Gavel, Rss } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -84,37 +84,6 @@ export default async function DashboardPage() {
       return !todaySubmittedIds.has(ch.id);
     })
     .slice(0, 6);
-
-  // Fetch recent user submissions with reactions
-  const { data: recentSubs } = await supabase
-    .from("submissions")
-    .select(`
-      id, photo_url, status, xp_awarded, created_at,
-      user:users!user_id(id, username, avatar_url),
-      challenge:challenges(title, xp_reward),
-      reactions(type, user_id)
-    `)
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(5);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const submissions: SubmissionCardData[] = ((recentSubs ?? []) as any[]).map((s) => ({
-    id: s.id,
-    photo_url: s.photo_url,
-    status: s.status as SubmissionCardData["status"],
-    xp_awarded: s.xp_awarded,
-    created_at: s.created_at,
-    user: s.user as SubmissionCardData["user"],
-    challenge: s.challenge as SubmissionCardData["challenge"],
-    reactions: {
-      positive: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "positive").length,
-      negative: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "negative").length,
-    },
-    userReaction: (s.reactions as Array<{ type: string; user_id: string }>)
-      .find((r) => r.user_id === user.id)?.type as "positive" | "negative" | null ?? null,
-    currentUserId: user.id,
-  }));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const currentPenalty = (profile as any)?.current_penalty as string | null ?? null;
@@ -218,17 +187,14 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      {/* ── Recent submissions ───────────────────────────────── */}
-      {submissions.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold mb-4">Suas últimas submissões</h2>
-          <div className="space-y-4">
-            {submissions.map((s) => (
-              <SubmissionCard key={s.id} data={s} showChallenge />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* ── Group feed ───────────────────────────────────────── */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Rss className="h-5 w-5 text-violet-400" />
+          Feed do grupo
+        </h2>
+        <DashboardFeed currentUserId={user.id} />
+      </section>
     </div>
   );
 }
