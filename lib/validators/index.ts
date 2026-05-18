@@ -64,8 +64,22 @@ export const profileSchema = z.object({
     .optional(),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().email("Email inválido"),
+});
+
+export const resetPasswordSchema = z.object({
+  password: z
+    .string()
+    .min(12, "Senha deve ter no mínimo 12 caracteres")
+    .regex(/[A-Z]/, "Deve conter ao menos uma letra maiúscula")
+    .regex(/[0-9]/, "Deve conter ao menos um número"),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type ChallengeInput = z.infer<typeof challengeSchema>;
 export type ReactionInput = z.infer<typeof reactionSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
