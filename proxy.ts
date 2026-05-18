@@ -8,7 +8,7 @@ import { createServerClient } from "@supabase/ssr";
 // - Protected paths: require an active (approved) session
 // - Admin paths: additionally require role = "admin"
 
-const PUBLIC_PATHS = ["/login", "/register", "/api/auth", "/auth/callback"];
+const PUBLIC_PATHS = ["/login", "/register", "/api/auth", "/auth/callback", "/forgot-password", "/reset-password"];
 const ADMIN_PATHS  = ["/admin", "/api/admin"];
 const PENDING_PAGE = "/pending";
 
