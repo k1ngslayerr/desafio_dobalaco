@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { appDateStr, appWeekStartStr, appDaysElapsedThisWeek, appYesterdayStr } from "@/lib/date";
+import { appDateStr, appWeekStartStr, appDaysElapsedThisWeek } from "@/lib/date";
 
 // GET /api/weekly
 // Returns challenges × users submission matrix for the current week.
@@ -24,8 +24,6 @@ export async function GET() {
     `${weekEnd.getUTCFullYear()}-${String(weekEnd.getUTCMonth() + 1).padStart(2, "0")}-${String(weekEnd.getUTCDate()).padStart(2, "0")}`;
   const todayStr    = appDateStr();
   const daysElapsed = appDaysElapsedThisWeek();
-  // 1-day grace period: a challenge that ends today still appears tomorrow
-  const yesterdayStr = appYesterdayStr();
 
   // ── Parallel fetches ─────────────────────────────────────
   const [
@@ -35,12 +33,15 @@ export async function GET() {
     { data: settings },
     { data: excuses },
   ] = await Promise.all([
+    // Fetch all challenges active at any point this week so the grid can show
+    // the full 7-day schedule. Use weekStartStr (not yesterdayStr) so that
+    // Monday's challenges still appear on Wednesday, Thursday, etc.
     supabase
       .from("challenges")
       .select("id, title, frequency, weekly_target, xp_reward, starts_at, ends_at, created_at")
       .eq("is_active", true)
       .or(`starts_at.is.null,starts_at.lte.${todayStr}`)
-      .or(`ends_at.is.null,ends_at.gte.${yesterdayStr}`)
+      .or(`ends_at.is.null,ends_at.gte.${weekStartStr}`)
       .order("title"),
     supabase
       .from("users")

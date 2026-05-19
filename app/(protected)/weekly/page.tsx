@@ -79,18 +79,14 @@ function weekDays(weekStart: string): string[] {
   });
 }
 
-/** Returns ends_at + 1 day as "YYYY-MM-DD" — the last day of the grace period. */
-function gracefulEnd(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const utc = new Date(Date.UTC(y, m - 1, d));
-  utc.setUTCDate(utc.getUTCDate() + 1);
-  return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, "0")}-${String(utc.getUTCDate()).padStart(2, "0")}`;
-}
-
+/**
+ * Strict active check — no grace period.
+ * The weekly grid shows the intended schedule; grace period is for
+ * the submission form only (allows late submission), not for display.
+ */
 function isChallengeActiveOnDay(ch: Challenge, day: string): boolean {
   if (ch.starts_at && day < ch.starts_at) return false;
-  // 1-day grace period: challenge active until end of day after ends_at
-  if (ch.ends_at && day > gracefulEnd(ch.ends_at)) return false;
+  if (ch.ends_at && day > ch.ends_at) return false;
   return true;
 }
 
@@ -100,85 +96,113 @@ function formatWeekRange(start: string, end: string) {
   } catch { return `${start} – ${end}`; }
 }
 
-// ── Weekly compliance summary (used for "Atrasados" section) ─────────────────
+// ── Challenge grouping ────────────────────────────────────────────────────────
+// Challenges named "Foo - Seg", "Foo - Ter" etc. are the same recurring
+// challenge split into per-day DB records. Strip the suffix to unify them.
 
-function activeDaysWindow(ch: Challenge, weekStart: string, today: string): string[] {
-  const effectiveStart =
-    ch.frequency === "daily"
-      ? (ch.starts_at ?? ch.created_at.split("T")[0])
-      : ch.starts_at;
-  const days: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart + "T12:00:00");
-    d.setDate(d.getDate() + i);
-    const dayStr = d.toISOString().split("T")[0];
-    if (dayStr > today) break;
-    if (effectiveStart && dayStr < effectiveStart) continue;
-    // 1-day grace period: include the day after ends_at
-    if (ch.ends_at && dayStr > gracefulEnd(ch.ends_at)) continue;
-    days.push(dayStr);
-  }
-  return days;
+function baseName(title: string): string {
+  return title.replace(/ - (Seg|Ter|Qua|Qui|Sex|Sáb|Dom)$/, "");
 }
+
+interface ChallengeGroup {
+  key: string;                         // display title (base name)
+  frequency: Challenge["frequency"];
+  weekly_target: number;
+  xp_reward: number;
+  challenges: Challenge[];             // one DB record per applicable day
+}
+
+function buildGroups(challenges: Challenge[]): ChallengeGroup[] {
+  const map = new Map<string, ChallengeGroup>();
+  for (const ch of challenges) {
+    const key = baseName(ch.title);
+    const existing = map.get(key);
+    if (existing) {
+      existing.challenges.push(ch);
+    } else {
+      map.set(key, {
+        key,
+        frequency: ch.frequency,
+        weekly_target: ch.weekly_target,
+        xp_reward: ch.xp_reward,
+        challenges: [ch],
+      });
+    }
+  }
+  return Array.from(map.values());
+}
+
+// ── Per-group compliance cell ─────────────────────────────────────────────────
 
 interface CellData { count: number; target: number; isComplete: boolean; isOnTrack: boolean; }
 
-function computeCell(
-  ch: Challenge,
+function computeGroupCell(
+  group: ChallengeGroup,
   userId: string,
   submissions: Submission[],
   excuses: Excuse[],
   today: string,
   weekStart: string,
 ): CellData {
-  let count: number, target: number;
-
-  if (ch.frequency === "weekly") {
-    target = ch.weekly_target;
-    count = submissions.filter((s) => s.challenge_id === ch.id && s.user_id === userId).length;
-  } else {
-    // daily & streak both use the active-window approach
-    const days = activeDaysWindow(ch, weekStart, today);
-    const excusedInPeriod = excuses.filter(
-      (e) => e.user_id === userId && days.includes(e.excuse_date)
-    ).length;
-    target = Math.max(0, days.length - excusedInPeriod);
-    count = submissions.filter(
-      (s) => s.challenge_id === ch.id && s.user_id === userId && days.includes(s.submitted_date)
-    ).length;
+  if (group.frequency === "weekly") {
+    const ids = new Set(group.challenges.map((c) => c.id));
+    const target = group.weekly_target;
+    const count = submissions.filter((s) => s.user_id === userId && ids.has(s.challenge_id)).length;
+    return { count, target, isComplete: target === 0 || count >= target, isOnTrack: target === 0 || count >= Math.ceil(target / 2) };
   }
 
-  return {
-    count, target,
-    isComplete: target === 0 || count >= target,
-    isOnTrack: target === 0 || count >= Math.ceil(target / 2),
-  };
+  // daily / streak — build a map: dayStr → challengeId (strict, no grace)
+  const dayToChId = new Map<string, string>();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart + "T12:00:00");
+    d.setDate(d.getDate() + i);
+    const dayStr = d.toISOString().split("T")[0];
+    if (dayStr > today) break;
+    const ch = group.challenges.find((c) => isChallengeActiveOnDay(c, dayStr));
+    if (ch) dayToChId.set(dayStr, ch.id);
+  }
+
+  const activeDays = Array.from(dayToChId.keys());
+  const excusedInPeriod = excuses.filter(
+    (e) => e.user_id === userId && activeDays.includes(e.excuse_date)
+  ).length;
+  const target = Math.max(0, activeDays.length - excusedInPeriod);
+  // A challenge counts as done if any submission for that challenge_id exists this week
+  const count = activeDays.filter((day) => {
+    const chId = dayToChId.get(day)!;
+    return submissions.some((s) => s.user_id === userId && s.challenge_id === chId);
+  }).length;
+
+  return { count, target, isComplete: target === 0 || count >= target, isOnTrack: target === 0 || count >= Math.ceil(target / 2) };
 }
 
-// ── Collapsed day cell: X/Y challenges done on a given day ───────────────────
+// ── Collapsed day cell: X/Y challenge groups done on a given day ─────────────
 
 function CollapsedCell({
-  userId, day, today, challenges, submissions, excuses,
+  userId, day, today, groups, submissions, excuses,
 }: {
   userId: string; day: string; today: string;
-  challenges: Challenge[]; submissions: Submission[]; excuses: Excuse[];
+  groups: ChallengeGroup[]; submissions: Submission[]; excuses: Excuse[];
 }) {
   if (day > today) {
     return <span className="text-muted-foreground/25 text-xs select-none">—</span>;
   }
 
-  const activeOnDay = challenges.filter((ch) => isChallengeActiveOnDay(ch, day));
-  const total = activeOnDay.length;
+  // Only count groups that have a challenge strictly active on this day (no grace)
+  const activeGroups = groups.filter((g) =>
+    g.challenges.some((ch) => isChallengeActiveOnDay(ch, day))
+  );
+  const total = activeGroups.length;
   if (total === 0) {
     return <span className="text-muted-foreground/25 text-xs select-none">—</span>;
   }
 
   const isExcused = excuses.some((e) => e.user_id === userId && e.excuse_date === day);
-  const done = activeOnDay.filter((ch) =>
-    submissions.some(
-      (s) => s.user_id === userId && s.challenge_id === ch.id && s.submitted_date === day
-    )
-  ).length;
+  const done = activeGroups.filter((g) => {
+    const ch = g.challenges.find((c) => isChallengeActiveOnDay(c, day));
+    if (!ch) return false;
+    return submissions.some((s) => s.user_id === userId && s.challenge_id === ch.id);
+  }).length;
 
   if (isExcused && done === 0) {
     return <FileCheck className="h-3.5 w-3.5 text-sky-400 mx-auto" />;
@@ -196,24 +220,25 @@ function CollapsedCell({
   );
 }
 
-// ── Expanded sub-row cell: ✓ / ✗ / — for one challenge on one day ────────────
+// ── Expanded sub-row cell: ✓ / ✗ / — for one group on one day ───────────────
+// Finds the challenge in the group that was due on this day and checks submission.
 
-function ExpandedCell({
-  userId, challenge, day, today, submissions, excuses,
+function ExpandedGroupCell({
+  userId, group, day, today, submissions, excuses,
 }: {
-  userId: string; challenge: Challenge; day: string; today: string;
+  userId: string; group: ChallengeGroup; day: string; today: string;
   submissions: Submission[]; excuses: Excuse[];
 }) {
   const isFuture = day > today;
-  const isActive = isChallengeActiveOnDay(challenge, day);
+  // Find the challenge in this group strictly active on this day
+  const ch = group.challenges.find((c) => isChallengeActiveOnDay(c, day));
 
-  if (isFuture || !isActive) {
+  if (isFuture || !ch) {
     return <Minus className="h-3 w-3 text-muted-foreground/20 mx-auto" />;
   }
 
-  const sub = submissions.find(
-    (s) => s.user_id === userId && s.challenge_id === challenge.id && s.submitted_date === day
-  );
+  // Any submission for this challenge_id counts (grace period submissions included)
+  const sub = submissions.find((s) => s.user_id === userId && s.challenge_id === ch.id);
   const isExcused = excuses.some((e) => e.user_id === userId && e.excuse_date === day);
 
   if (sub) return <CheckCircle2 className="h-4 w-4 text-emerald-400 mx-auto" />;
@@ -265,13 +290,14 @@ export default function WeeklyPage() {
   } = data;
 
   const days = weekDays(weekStart);
+  const groups = buildGroups(challenges);
   const penalizedUsers = users.filter((u) => u.current_penalty);
 
   const behindUsers = users
     .map((u) => {
       let totalMissed = 0;
-      for (const ch of challenges) {
-        const cell = computeCell(ch, u.id, submissions, excuses, today, weekStart);
+      for (const group of groups) {
+        const cell = computeGroupCell(group, u.id, submissions, excuses, today, weekStart);
         totalMissed += Math.max(0, cell.target - cell.count);
       }
       return { user: u, totalMissed };
@@ -328,10 +354,10 @@ export default function WeeklyPage() {
       </div>
 
       {/* ── Main grid ─────────────────────────────────────────── */}
-      {challenges.length === 0 || users.length === 0 ? (
+      {groups.length === 0 || users.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
-            {challenges.length === 0 ? "Nenhum desafio ativo." : "Nenhum usuário ativo."}
+            {groups.length === 0 ? "Nenhum desafio ativo." : "Nenhum usuário ativo."}
           </CardContent>
         </Card>
       ) : (
@@ -405,7 +431,7 @@ export default function WeeklyPage() {
                             userId={u.id}
                             day={day}
                             today={today}
-                            challenges={challenges}
+                            groups={groups}
                             submissions={submissions}
                             excuses={excuses}
                           />
@@ -413,32 +439,32 @@ export default function WeeklyPage() {
                       ))}
                     </tr>
 
-                    {/* ── Expanded: one sub-row per challenge ── */}
-                    {isExpanded && challenges.map((ch, ci) => (
+                    {/* ── Expanded: one sub-row per challenge group ── */}
+                    {isExpanded && groups.map((group, gi) => (
                       <tr
-                        key={`${u.id}__${ch.id}`}
+                        key={`${u.id}__${group.key}`}
                         className={cn(
                           "border-b border-border/30",
-                          ci % 2 === 0 ? "bg-muted/5" : "bg-muted/[0.08]"
+                          gi % 2 === 0 ? "bg-muted/5" : "bg-muted/[0.08]"
                         )}
                       >
-                        {/* challenge name, indented */}
+                        {/* group name, indented */}
                         <td className="sticky left-0 z-10 bg-background/90 backdrop-blur pl-11 pr-4 py-2 text-xs text-muted-foreground">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            {ch.frequency === "weekly" && (
+                            {group.frequency === "weekly" && (
                               <RotateCcw className="h-3 w-3 text-amber-400 shrink-0" />
                             )}
-                            {ch.frequency === "streak" && (
+                            {group.frequency === "streak" && (
                               <Flame className="h-3 w-3 text-orange-400 shrink-0" />
                             )}
-                            <span className="truncate">{ch.title}</span>
+                            <span className="truncate">{group.key}</span>
                           </div>
                         </td>
                         {days.map((day) => (
                           <td key={day} className="px-2 py-2 text-center">
-                            <ExpandedCell
+                            <ExpandedGroupCell
                               userId={u.id}
-                              challenge={ch}
+                              group={group}
                               day={day}
                               today={today}
                               submissions={submissions}
@@ -578,7 +604,7 @@ export default function WeeklyPage() {
       {behindUsers.length === 0 &&
         penalizedUsers.length === 0 &&
         !groupPenalty.group_penalty_active &&
-        challenges.length > 0 && (
+        groups.length > 0 && (
         <Card className="border-emerald-500/20 bg-emerald-500/5">
           <CardContent className="py-6 text-center">
             <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto mb-2" />
