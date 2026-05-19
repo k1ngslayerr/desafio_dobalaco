@@ -181,7 +181,7 @@ export default function AdminSubmissionsPage() {
                     {(sub.title || sub.description) && (
                       <div className="space-y-0.5">
                         {sub.title && <p className="text-sm font-medium">{sub.title}</p>}
-                        {sub.description && <p className="text-xs text-muted-foreground line-clamp-2">{sub.description}</p>}
+                        {sub.description && <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap">{sub.description}</p>}
                       </div>
                     )}
 

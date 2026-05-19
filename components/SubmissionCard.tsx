@@ -236,7 +236,7 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
               <p className="font-semibold text-sm leading-snug">{localTitle}</p>
             )}
             {localDescription && (
-              <p className="text-sm text-muted-foreground leading-relaxed">{localDescription}</p>
+              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{localDescription}</p>
             )}
           </div>
         )}
