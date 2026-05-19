@@ -93,7 +93,7 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
       <CardContent className="p-0">
         {/* Photo – only rendered when a photo exists */}
         {hasPhoto && (
-          <div className="relative w-full aspect-video bg-muted">
+          <div className="relative w-full aspect-[4/5] bg-muted">
             {signedPhotoUrl ? (
               <Image
                 src={signedPhotoUrl}
