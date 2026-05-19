@@ -81,3 +81,28 @@ export function appWeekStartStr(date: Date = new Date()): string {
 export function appDaysElapsedThisWeek(date: Date = new Date()): number {
   return appDayOfWeekMon0(date) + 1;
 }
+
+/**
+ * Returns "YYYY-MM-DD" for yesterday in APP_TIMEZONE.
+ * Used to implement the 1-day grace-period for challenge submissions:
+ * a challenge that ends today is still submittable tomorrow.
+ */
+export function appYesterdayStr(date: Date = new Date()): string {
+  const yesterday = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+  return appDateStr(yesterday);
+}
+
+/**
+ * Adds `days` calendar days to a "YYYY-MM-DD" string and returns the result
+ * as another "YYYY-MM-DD" string (pure UTC arithmetic — no timezone shift).
+ * Used to compute tolerance end-dates (ends_at + 1) for display comparisons.
+ */
+export function datePlusDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  utc.setUTCDate(utc.getUTCDate() + days);
+  const y2 = utc.getUTCFullYear();
+  const m2 = String(utc.getUTCMonth() + 1).padStart(2, "0");
+  const d2 = String(utc.getUTCDate()).padStart(2, "0");
+  return `${y2}-${m2}-${d2}`;
+}

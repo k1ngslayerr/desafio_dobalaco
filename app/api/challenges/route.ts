@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { appDateStr, appWeekStartStr } from "@/lib/date";
+import { appDateStr, appWeekStartStr, appYesterdayStr } from "@/lib/date";
 
 // GET /api/challenges
 // Returns active challenges + user's weekly submissions + current penalty + scheduled (agenda).
@@ -15,6 +15,8 @@ export async function GET() {
   // writes as `submitted_date`. See lib/date.ts.
   const todayStr = appDateStr();
   const weekStartStr = appWeekStartStr();
+  // 1-day grace period: a challenge that ends today still appears tomorrow
+  const yesterdayStr = appYesterdayStr();
 
   const adminClient = await createAdminClient();
 
@@ -29,7 +31,7 @@ export async function GET() {
       .select("id, title, description, xp_reward, requires_photo, frequency, weekly_target, quantity_label, xp_per_unit, max_quantity")
       .eq("is_active", true)
       .or(`starts_at.is.null,starts_at.lte.${todayStr}`)
-      .or(`ends_at.is.null,ends_at.gte.${todayStr}`)
+      .or(`ends_at.is.null,ends_at.gte.${yesterdayStr}`)
       .order("created_at", { ascending: false }),
     supabase
       .from("submissions")

@@ -43,9 +43,11 @@ export default async function DashboardPage() {
   // Fetch active challenges the user hasn't submitted to today (daily) or completed this week (weekly)
   // [SECURITY] Use app-timezone dates so the filter matches `submitted_date`
   // written by /api/submissions. See lib/date.ts.
-  const { appDateStr, appWeekStartStr } = await import("@/lib/date");
+  const { appDateStr, appWeekStartStr, appYesterdayStr } = await import("@/lib/date");
   const todayStr = appDateStr();
   const weekStartStr = appWeekStartStr();
+  // 1-day grace period: a challenge that ends today still appears tomorrow
+  const yesterdayStr = appYesterdayStr();
 
   const { data: userSubmissions } = await supabase
     .from("submissions")
@@ -64,7 +66,7 @@ export default async function DashboardPage() {
     .select("id, title, description, xp_reward, frequency, weekly_target")
     .eq("is_active", true)
     .or(`starts_at.is.null,starts_at.lte.${todayStr}`)
-    .or(`ends_at.is.null,ends_at.gte.${todayStr}`)
+    .or(`ends_at.is.null,ends_at.gte.${yesterdayStr}`)
     .order("created_at", { ascending: false })
     .limit(12);
 

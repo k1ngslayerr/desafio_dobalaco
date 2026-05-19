@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { submissionLimiter } from "@/lib/rate-limit";
 import { checkImageMime } from "@/lib/security/mime-check";
 import { buildStoragePath } from "@/lib/security/sanitize";
-import { appDateStr } from "@/lib/date";
+import { appDateStr, appYesterdayStr } from "@/lib/date";
 import { z } from "zod";
 
 const createSchema = z.object({
@@ -62,13 +62,22 @@ export async function POST(request: Request) {
   // Fetch challenge to know its config
   const { data: challenge } = await supabase
     .from("challenges")
-    .select("id, is_active, requires_photo, frequency, weekly_target, quantity_label, xp_per_unit, xp_reward, max_quantity")
+    .select("id, is_active, requires_photo, frequency, weekly_target, quantity_label, xp_per_unit, xp_reward, max_quantity, ends_at")
     .eq("id", parsed.data.challenge_id)
     .eq("is_active", true)
     .single();
 
   if (!challenge) {
     return NextResponse.json({ error: "Desafio não encontrado" }, { status: 404 });
+  }
+
+  // [GRACE PERIOD] Allow submissions up to 1 day after ends_at so users can
+  // post at the end of the day without being locked out at midnight.
+  if (challenge.ends_at) {
+    const yesterdayStr = appYesterdayStr();
+    if (challenge.ends_at < yesterdayStr) {
+      return NextResponse.json({ error: "Este desafio já encerrou" }, { status: 400 });
+    }
   }
 
   // Validate photo requirement

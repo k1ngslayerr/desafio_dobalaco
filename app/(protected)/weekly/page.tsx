@@ -79,9 +79,18 @@ function weekDays(weekStart: string): string[] {
   });
 }
 
+/** Returns ends_at + 1 day as "YYYY-MM-DD" — the last day of the grace period. */
+function gracefulEnd(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  utc.setUTCDate(utc.getUTCDate() + 1);
+  return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, "0")}-${String(utc.getUTCDate()).padStart(2, "0")}`;
+}
+
 function isChallengeActiveOnDay(ch: Challenge, day: string): boolean {
   if (ch.starts_at && day < ch.starts_at) return false;
-  if (ch.ends_at && day > ch.ends_at) return false;
+  // 1-day grace period: challenge active until end of day after ends_at
+  if (ch.ends_at && day > gracefulEnd(ch.ends_at)) return false;
   return true;
 }
 
@@ -105,7 +114,8 @@ function activeDaysWindow(ch: Challenge, weekStart: string, today: string): stri
     const dayStr = d.toISOString().split("T")[0];
     if (dayStr > today) break;
     if (effectiveStart && dayStr < effectiveStart) continue;
-    if (ch.ends_at && dayStr > ch.ends_at) continue;
+    // 1-day grace period: include the day after ends_at
+    if (ch.ends_at && dayStr > gracefulEnd(ch.ends_at)) continue;
     days.push(dayStr);
   }
   return days;
