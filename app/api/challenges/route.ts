@@ -25,10 +25,11 @@ export async function GET() {
     { data: submissions },
     { data: profile },
     { data: scheduled },
+    { data: dismissals },
   ] = await Promise.all([
     supabase
       .from("challenges")
-      .select("id, title, description, xp_reward, requires_photo, frequency, weekly_target, quantity_label, xp_per_unit, max_quantity")
+      .select("id, title, description, xp_reward, requires_photo, frequency, weekly_target, quantity_label, xp_per_unit, max_quantity, starts_at, ends_at")
       .eq("is_active", true)
       .or(`starts_at.is.null,starts_at.lte.${todayStr}`)
       .or(`ends_at.is.null,ends_at.gte.${yesterdayStr}`)
@@ -50,12 +51,23 @@ export async function GET() {
       .eq("is_active", true)
       .gt("starts_at", todayStr)
       .order("starts_at", { ascending: true }),
+    // User's dismissed challenges — filtered out client-side
+    supabase
+      .from("user_dismissals")
+      .select("challenge_id")
+      .eq("user_id", user.id),
   ]);
+
+  const dismissedIds = new Set((dismissals ?? []).map((d) => d.challenge_id));
+
+  // Filter out dismissed challenges before returning
+  const filteredChallenges = (challenges ?? []).filter((c) => !dismissedIds.has(c.id));
 
   return NextResponse.json({
     todayStr,
+    yesterdayStr,
     weekStartStr,
-    challenges:     challenges ?? [],
+    challenges:     filteredChallenges,
     submissions:    submissions ?? [],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     currentPenalty: (profile as any)?.current_penalty ?? null,

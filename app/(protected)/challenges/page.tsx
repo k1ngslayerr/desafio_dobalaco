@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame, CalendarClock, Lock, ChevronLeft, ChevronRight, Eye } from "lucide-react";
+import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame, CalendarClock, Lock, ChevronLeft, ChevronRight, Eye, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ScheduledChallenge {
@@ -43,6 +43,8 @@ interface Challenge {
   quantity_label: string | null;
   xp_per_unit: number | null;
   max_quantity: number | null;
+  starts_at: string | null;
+  ends_at: string | null;
   // For daily: submitted today. For weekly: how many times this week.
   submittedToday: boolean;
   weeklyCount: number;
@@ -63,6 +65,105 @@ const uploadSchema = z.object({
 
 type UploadInput = z.infer<typeof uploadSchema>;
 
+// ── Challenge card (top-level to avoid remount on every render) ──────────────
+
+interface ChallengeCardItemProps {
+  ch: Challenge;
+  isGrace: boolean;
+  onDismiss: (id: string) => void;
+  onOpen: (ch: Challenge) => void;
+}
+
+function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen }: ChallengeCardItemProps) {
+  const isWeekly = ch.frequency === "weekly";
+  const weeklyDone = isWeekly && ch.weeklyCount >= ch.weekly_target;
+  const dailyDone = !isWeekly && ch.submittedToday;
+  const isDone = isWeekly ? weeklyDone : dailyDone;
+
+  return (
+    <Card
+      className={cn(
+        "hover:border-violet-500/50 transition-colors relative",
+        isGrace && "opacity-80 border-dashed"
+      )}
+    >
+      {/* Dismiss button — top-right corner, only for incomplete challenges */}
+      {!isDone && (
+        <button
+          onClick={() => onDismiss(ch.id)}
+          title="Dispensar desafio"
+          aria-label="Dispensar desafio"
+          className="absolute top-2.5 right-2.5 z-10 rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <CardHeader className="p-4 pb-2">
+        <div className="flex items-start justify-between gap-2 pr-6">
+          <CardTitle className="text-sm line-clamp-2">{ch.title}</CardTitle>
+          <Badge
+            variant="outline"
+            className="shrink-0 text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+          >
+            +{ch.xp_reward} XP
+          </Badge>
+        </div>
+        <CardDescription className="line-clamp-3 text-xs">{ch.description}</CardDescription>
+        {/* Indicator badges */}
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {isWeekly && (
+            <Badge variant="outline" className="text-xs text-amber-400 border-amber-500/30 py-0">
+              <RotateCcw className="h-2.5 w-2.5 mr-1" />{ch.weeklyCount}/{ch.weekly_target}x semana
+            </Badge>
+          )}
+          {ch.frequency === "streak" && (
+            <Badge variant="outline" className="text-xs text-orange-400 border-orange-500/30 py-0">
+              <Flame className="h-2.5 w-2.5 mr-1" />Sequência
+            </Badge>
+          )}
+          {!ch.requires_photo && (
+            <Badge variant="outline" className="text-xs text-sky-400 border-sky-500/30 py-0">
+              <CameraOff className="h-2.5 w-2.5 mr-1" />Sem foto
+            </Badge>
+          )}
+          {ch.quantity_label && (
+            <Badge variant="outline" className="text-xs text-violet-400 border-violet-500/30 py-0">
+              <Hash className="h-2.5 w-2.5 mr-1" />{ch.quantity_label}
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="p-4 pt-0 flex gap-2">
+        {isDone ? (
+          <>
+            <Badge variant="secondary" className="text-xs gap-1 flex-1 justify-center py-1.5">
+              <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+              {isWeekly ? "Meta da semana atingida" : "Enviado hoje ✓"}
+            </Badge>
+            <Link
+              href={`/challenges/${ch.id}`}
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5 shrink-0")}
+            >
+              <Eye className="h-3.5 w-3.5" /> Ver
+            </Link>
+          </>
+        ) : (
+          <>
+            <Button size="sm" className="flex-1" onClick={() => onOpen(ch)}>
+              <Upload className="mr-1.5 h-3.5 w-3.5" /> Enviar
+            </Button>
+            <Link href={`/challenges/${ch.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Page component ────────────────────────────────────────────────────────────
+
 export default function ChallengesPage() {
   const router = useRouter();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
@@ -70,6 +171,9 @@ export default function ChallengesPage() {
   const [currentPenalty, setCurrentPenalty] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Challenge | null>(null);
+  const [yesterdayStr, setYesterdayStr] = useState<string>("");
+  // Challenges dismissed locally (persisted to DB async — instant UI feedback)
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -109,10 +213,11 @@ export default function ChallengesPage() {
       if (!res.ok) { return; }
       const json = await res.json();
 
-      const { challenges: chData, submissions: subData, currentPenalty: penalty, scheduled: sched, todayStr } = json;
+      const { challenges: chData, submissions: subData, currentPenalty: penalty, scheduled: sched, todayStr, yesterdayStr: yd } = json;
 
       setCurrentPenalty(penalty ?? null);
       setScheduled(sched ?? []);
+      setYesterdayStr(yd ?? "");
 
       const weekSubs = (subData as { challenge_id: string; submitted_date: string }[]) ?? [];
       const todaySet = new Set(weekSubs.filter((s) => s.submitted_date === todayStr).map((s) => s.challenge_id));
@@ -135,6 +240,21 @@ export default function ChallengesPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Dismiss a challenge: optimistic UI + async DB write
+  async function dismiss(challengeId: string) {
+    setDismissedIds((prev) => new Set([...prev, challengeId]));
+    try {
+      await fetch("/api/dismissals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge_id: challengeId }),
+      });
+    } catch {
+      // If it fails the dismissal is still applied locally for this session;
+      // it'll reappear on the next page load, which is acceptable.
+    }
+  }
 
   // Estimate XP for quantifiable challenges
   const estimatedXP = (() => {
@@ -310,87 +430,76 @@ export default function ChallengesPage() {
         <div className="flex justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : challenges.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-6">Nenhum desafio ativo no momento. Confira a agenda abaixo.</p>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {challenges.map((ch) => {
-            // Determine if the user has "done enough" for this challenge today/this week
-            const isWeekly = ch.frequency === "weekly";
-            const weeklyDone = isWeekly && ch.weeklyCount >= ch.weekly_target;
-            const dailyDone = !isWeekly && ch.submittedToday;
-            const isDone = isWeekly ? weeklyDone : dailyDone;
+      ) : (() => {
+        // Split active challenges into "today" and "yesterday grace period" groups
+        const visible = challenges.filter((c) => !dismissedIds.has(c.id));
+        const todayChallenges = visible.filter(
+          (c) => !c.ends_at || c.ends_at > yesterdayStr
+        );
+        const yesterdayChallenges = visible.filter(
+          (c) => c.ends_at && c.ends_at === yesterdayStr
+        );
 
-            return (
-            <Card
-              key={ch.id}
-              className="hover:border-violet-500/50 transition-colors"
-            >
-              <CardHeader className="p-4 pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-sm line-clamp-2">{ch.title}</CardTitle>
-                  <Badge
-                    variant="outline"
-                    className="shrink-0 text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-                  >
-                    +{ch.xp_reward} XP
+        if (visible.length === 0) {
+          return (
+            <p className="text-sm text-muted-foreground py-6">
+              Nenhum desafio ativo no momento. Confira a agenda abaixo.
+            </p>
+          );
+        }
+
+        return (
+          <div className="space-y-6">
+            {/* ── Hoje ──────────────────────────────────────────────── */}
+            {todayChallenges.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold text-foreground/70 uppercase tracking-wide">
+                  Hoje
+                </h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {todayChallenges.map((ch) => (
+                    <ChallengeCardItem
+                      key={ch.id}
+                      ch={ch}
+                      isGrace={false}
+                      onDismiss={dismiss}
+                      onOpen={openModal}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* ── Ontem — último dia ────────────────────────────────── */}
+            {yesterdayChallenges.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    Ontem — último dia
+                  </h2>
+                  <Badge variant="outline" className="text-xs text-amber-400 border-amber-500/30 py-0">
+                    Prazo extra
                   </Badge>
                 </div>
-                <CardDescription className="line-clamp-3 text-xs">{ch.description}</CardDescription>
-                {/* Indicator badges */}
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {isWeekly && (
-                    <Badge variant="outline" className="text-xs text-amber-400 border-amber-500/30 py-0">
-                      <RotateCcw className="h-2.5 w-2.5 mr-1" />{ch.weeklyCount}/{ch.weekly_target}x semana
-                    </Badge>
-                  )}
-                  {ch.frequency === "streak" && (
-                    <Badge variant="outline" className="text-xs text-orange-400 border-orange-500/30 py-0">
-                      <Flame className="h-2.5 w-2.5 mr-1" />Sequência
-                    </Badge>
-                  )}
-                  {!ch.requires_photo && (
-                    <Badge variant="outline" className="text-xs text-sky-400 border-sky-500/30 py-0">
-                      <CameraOff className="h-2.5 w-2.5 mr-1" />Sem foto
-                    </Badge>
-                  )}
-                  {ch.quantity_label && (
-                    <Badge variant="outline" className="text-xs text-violet-400 border-violet-500/30 py-0">
-                      <Hash className="h-2.5 w-2.5 mr-1" />{ch.quantity_label}
-                    </Badge>
-                  )}
+                <p className="text-xs text-muted-foreground -mt-1">
+                  Ainda dá tempo de enviar até meia-noite. Dispense os que não vai conseguir.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {yesterdayChallenges.map((ch) => (
+                    <ChallengeCardItem
+                      key={ch.id}
+                      ch={ch}
+                      isGrace
+                      onDismiss={dismiss}
+                      onOpen={openModal}
+                    />
+                  ))}
                 </div>
-              </CardHeader>
-              <CardContent className="p-4 pt-0 flex gap-2">
-                {isDone ? (
-                  <>
-                    <Badge variant="secondary" className="text-xs gap-1 flex-1 justify-center py-1.5">
-                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                      {isWeekly ? "Meta da semana atingida" : "Enviado hoje ✓"}
-                    </Badge>
-                    <Link
-                      href={`/challenges/${ch.id}`}
-                      className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5 shrink-0")}
-                    >
-                      <Eye className="h-3.5 w-3.5" /> Ver
-                    </Link>
-                  </>
-                ) : (
-                  <>
-                    <Button size="sm" className="flex-1" onClick={() => openModal(ch)}>
-                      <Upload className="mr-1.5 h-3.5 w-3.5" /> Enviar
-                    </Button>
-                    <Link href={`/challenges/${ch.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            );
-          })}
-        </div>
-      )}
+              </section>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Agenda (calendar) ────────────────────────────────── */}
       {!loading && scheduled.length > 0 && agendaWeekStart && (
