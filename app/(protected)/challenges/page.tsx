@@ -45,8 +45,9 @@ interface Challenge {
   max_quantity: number | null;
   starts_at: string | null;
   ends_at: string | null;
-  // For daily: submitted today. For weekly: how many times this week.
-  submittedToday: boolean;
+  // For daily: submitted today or yesterday (grace period). For weekly: how many times this week.
+  submittedToday:     boolean;
+  submittedYesterday: boolean;
   weeklyCount: number;
 }
 
@@ -77,8 +78,15 @@ interface ChallengeCardItemProps {
 function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen }: ChallengeCardItemProps) {
   const isWeekly = ch.frequency === "weekly";
   const weeklyDone = isWeekly && ch.weeklyCount >= ch.weekly_target;
-  const dailyDone = !isWeekly && ch.submittedToday;
+  // Grace-period cards count a submission from yesterday OR today as "done"
+  const dailyDone = !isWeekly && (ch.submittedToday || (isGrace && ch.submittedYesterday));
   const isDone = isWeekly ? weeklyDone : dailyDone;
+  // Label reflects when the submission happened
+  const doneLabel = isWeekly
+    ? "Meta da semana atingida"
+    : ch.submittedToday
+    ? "Enviado hoje ✓"
+    : "Enviado ontem ✓";
 
   return (
     <Card
@@ -138,7 +146,7 @@ function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen }: ChallengeCardItem
           <>
             <Badge variant="secondary" className="text-xs gap-1 flex-1 justify-center py-1.5">
               <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-              {isWeekly ? "Meta da semana atingida" : "Enviado hoje ✓"}
+              {doneLabel}
             </Badge>
             <Link
               href={`/challenges/${ch.id}`}
@@ -220,7 +228,8 @@ export default function ChallengesPage() {
       setYesterdayStr(yd ?? "");
 
       const weekSubs = (subData as { challenge_id: string; submitted_date: string }[]) ?? [];
-      const todaySet = new Set(weekSubs.filter((s) => s.submitted_date === todayStr).map((s) => s.challenge_id));
+      const todaySet     = new Set(weekSubs.filter((s) => s.submitted_date === todayStr).map((s) => s.challenge_id));
+      const yesterdaySet = new Set(weekSubs.filter((s) => s.submitted_date === (yd ?? "")).map((s) => s.challenge_id));
       const weeklyCountMap: Record<string, number> = {};
       for (const s of weekSubs) {
         weeklyCountMap[s.challenge_id] = (weeklyCountMap[s.challenge_id] ?? 0) + 1;
@@ -230,7 +239,8 @@ export default function ChallengesPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ((chData ?? []) as any[]).map((c) => ({
           ...c,
-          submittedToday: todaySet.has(c.id),
+          submittedToday:     todaySet.has(c.id),
+          submittedYesterday: yesterdaySet.has(c.id),
           weeklyCount: weeklyCountMap[c.id] ?? 0,
         }))
       );
