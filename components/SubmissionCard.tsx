@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -8,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ReactionButtons } from "@/components/ReactionButtons";
+import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { useSignedUrl } from "@/lib/storage/use-signed-url";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +57,8 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
   const hasPhoto = !!data.photo_url;
   const hasText = !!(data.title || data.description);
 
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
   // Private bucket: generate signed URLs on demand
   const signedPhotoUrl  = useSignedUrl("submissions", data.photo_url);
   const signedAvatarUrl = useSignedUrl("avatars", data.user.avatar_url);
@@ -93,23 +97,40 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
       <CardContent className="p-0">
         {/* Photo – only rendered when a photo exists */}
         {hasPhoto && (
-          <div className="relative w-full aspect-[4/5] bg-muted">
-            {signedPhotoUrl ? (
-              <Image
+          <>
+            <div
+              className={cn(
+                "relative w-full aspect-[4/5] bg-muted",
+                signedPhotoUrl && "cursor-zoom-in"
+              )}
+              onClick={() => signedPhotoUrl && setLightboxOpen(true)}
+            >
+              {signedPhotoUrl ? (
+                <Image
+                  src={signedPhotoUrl}
+                  alt={`Submission de ${data.user.username}`}
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 640px) 100vw, 640px"
+                  unoptimized
+                />
+              ) : (
+                <div className="absolute inset-0 animate-pulse bg-muted" />
+              )}
+              {isApproved && (
+                <div className="absolute inset-0 border-2 border-emerald-500/40 rounded pointer-events-none" />
+              )}
+            </div>
+
+            {signedPhotoUrl && (
+              <PhotoLightbox
                 src={signedPhotoUrl}
                 alt={`Submission de ${data.user.username}`}
-                fill
-                className="object-cover"
-                sizes="(max-width: 640px) 100vw, 640px"
-                unoptimized
+                open={lightboxOpen}
+                onClose={() => setLightboxOpen(false)}
               />
-            ) : (
-              <div className="absolute inset-0 animate-pulse bg-muted" />
             )}
-            {isApproved && (
-              <div className="absolute inset-0 border-2 border-emerald-500/40 rounded pointer-events-none" />
-            )}
-          </div>
+          </>
         )}
 
         {/* Title and description */}
