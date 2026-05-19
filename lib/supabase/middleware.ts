@@ -24,7 +24,14 @@ export async function updateSession(request: NextRequest) {
             supabaseResponse.cookies.set(name, value, {
               ...options,
               httpOnly: true,
-              sameSite: "strict",
+              // [SECURITY] "lax" (not "strict") is required for Safari/iOS:
+              // SameSite=Strict blocks cookies on top-level navigations from
+              // external origins (bookmarks, links from other apps), making
+              // Safari users appear logged-out on every revisit. Lax still
+              // blocks cookies on cross-site sub-requests and non-safe methods,
+              // which is sufficient CSRF protection. Our proxy.ts origin check
+              // adds a second layer for all mutating API calls.
+              sameSite: "lax",
               // [SECURITY] Always Secure. Browsers exempt localhost for dev.
               secure: true,
             })

@@ -20,11 +20,12 @@ export async function createClient() {
               cookieStore.set(name, value, {
                 ...options,
                 httpOnly: true,
-                sameSite: "strict",
-                // [SECURITY] Always require HTTPS. Browsers exempt localhost,
-                // so this doesn't break local development. Previously this
-                // was gated on NODE_ENV=production, which could ship insecure
-                // cookies if NODE_ENV was misconfigured in a preview env.
+                // [SECURITY] "lax" required for Safari/iOS — SameSite=Strict
+                // blocks cookies on top-level navigations from bookmarks/other
+                // apps, logging Safari users out on every revisit. See
+                // middleware.ts for full rationale.
+                sameSite: "lax",
+                // [SECURITY] Always require HTTPS. Browsers exempt localhost.
                 secure: true,
               })
             );
