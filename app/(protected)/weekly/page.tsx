@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Loader2, CalendarDays, AlertTriangle, CheckCircle2, XCircle,
   Gavel, ShieldAlert, FileCheck, ChevronDown, ChevronRight,
-  Flame, RotateCcw, Minus,
+  Flame, RotateCcw, Minus, AlertOctagon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -167,10 +167,10 @@ function computeGroupCell(
     (e) => e.user_id === userId && activeDays.includes(e.excuse_date)
   ).length;
   const target = Math.max(0, activeDays.length - excusedInPeriod);
-  // A challenge counts as done if any submission for that challenge_id exists this week
+  // Only approved submissions count as done (contested = not valid)
   const count = activeDays.filter((day) => {
     const chId = dayToChId.get(day)!;
-    return submissions.some((s) => s.user_id === userId && s.challenge_id === chId);
+    return submissions.some((s) => s.user_id === userId && s.challenge_id === chId && s.status === "approved");
   }).length;
 
   return { count, target, isComplete: target === 0 || count >= target, isOnTrack: target === 0 || count >= Math.ceil(target / 2) };
@@ -201,7 +201,8 @@ function CollapsedCell({
   const done = activeGroups.filter((g) => {
     const ch = g.challenges.find((c) => isChallengeActiveOnDay(c, day));
     if (!ch) return false;
-    return submissions.some((s) => s.user_id === userId && s.challenge_id === ch.id);
+    // Only approved submissions count — contested does not clear the requirement
+    return submissions.some((s) => s.user_id === userId && s.challenge_id === ch.id && s.status === "approved");
   }).length;
 
   if (isExcused && done === 0) {
@@ -237,13 +238,14 @@ function ExpandedGroupCell({
     return <Minus className="h-3 w-3 text-muted-foreground/20 mx-auto" />;
   }
 
-  // Any submission for this challenge_id counts (grace period submissions included)
   const sub = submissions.find((s) => s.user_id === userId && s.challenge_id === ch.id);
   const isExcused = excuses.some((e) => e.user_id === userId && e.excuse_date === day);
 
-  if (sub) return <CheckCircle2 className="h-4 w-4 text-emerald-400 mx-auto" />;
-  if (isExcused) return <FileCheck className="h-4 w-4 text-sky-400 mx-auto" />;
-  return <XCircle className="h-3.5 w-3.5 text-red-400/60 mx-auto" />;
+  if (sub?.status === "approved")  return <CheckCircle2 className="h-4 w-4 text-emerald-400 mx-auto" />;
+  if (sub?.status === "contested") return <AlertOctagon className="h-4 w-4 text-orange-400 mx-auto" />;
+  if (sub?.status === "pending")   return <CheckCircle2 className="h-4 w-4 text-amber-400/70 mx-auto" />;
+  if (isExcused)                   return <FileCheck    className="h-4 w-4 text-sky-400 mx-auto" />;
+  return                                  <XCircle      className="h-3.5 w-3.5 text-red-400/60 mx-auto" />;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -341,6 +343,9 @@ export default function WeeklyPage() {
         </span>
         <span className="flex items-center gap-1">
           <XCircle className="h-3.5 w-3.5 text-red-400/70" />Faltou
+        </span>
+        <span className="flex items-center gap-1">
+          <AlertOctagon className="h-3.5 w-3.5 text-orange-400" />Contestado
         </span>
         <span className="flex items-center gap-1">
           <FileCheck className="h-3.5 w-3.5 text-sky-400" />Atestado
