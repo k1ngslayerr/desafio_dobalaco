@@ -8,7 +8,7 @@ import { LevelArt } from "@/components/LevelArt";
 import { SignedAvatar } from "@/components/SignedAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Loader2, Trophy } from "lucide-react";
+import { Loader2, Trophy, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface RankEntry {
@@ -19,6 +19,8 @@ interface RankEntry {
   xp: number;
   level: number;
   art_tier: number;
+  approvedCount: number;
+  contestedCount: number;
 }
 
 const medalConfig = [
@@ -131,11 +133,27 @@ export default function RankingPage() {
                   </div>
 
                   {/* Stats */}
-                  <div className="text-right shrink-0">
+                  <div className="text-right shrink-0 space-y-1">
                     <p className="text-sm font-bold text-emerald-400">
                       {user.xp.toLocaleString()} XP
                     </p>
                     <p className="text-xs text-muted-foreground">Nível {user.level}</p>
+                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                      {user.approvedCount > 0 && (
+                        <span className="text-[11px] text-muted-foreground">
+                          {user.approvedCount} aprovada{user.approvedCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                      {user.contestedCount > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] py-0 px-1.5 h-4 text-orange-400 border-orange-500/30 bg-orange-500/10 gap-1"
+                        >
+                          <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                          {user.contestedCount} contestada{user.contestedCount !== 1 ? "s" : ""}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
               </Card>

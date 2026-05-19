@@ -24,16 +24,40 @@ export async function GET() {
     return NextResponse.json({ error: "Erro ao buscar ranking" }, { status: 500 });
   }
 
-  // Bulk-fetch art tiers so we avoid an N+1 round-trip on the client
+  // Bulk-fetch art tiers and submission counts in parallel
   const levels = Array.from(new Set((users ?? []).map((u) => u.level)));
-  const { data: levelRows } = levels.length
-    ? await supabase.from("level_config").select("level, art_tier").in("level", levels)
-    : { data: [] as Array<{ level: number; art_tier: number }> };
+  const userIds = (users ?? []).map((u) => u.id);
 
-  const tierMap = new Map((levelRows ?? []).map((l) => [l.level, l.art_tier]));
+  const [{ data: levelRows }, { data: subRows }] = await Promise.all([
+    levels.length
+      ? supabase.from("level_config").select("level, art_tier").in("level", levels)
+      : Promise.resolve({ data: [] as Array<{ level: number; art_tier: number }> }),
+    // Count approved and contested submissions per user — single query, aggregate in JS
+    userIds.length
+      ? supabase
+          .from("submissions")
+          .select("user_id, status")
+          .in("user_id", userIds)
+          .in("status", ["approved", "contested"])
+      : Promise.resolve({ data: [] as Array<{ user_id: string; status: string }> }),
+  ]);
+
+  const tierMap      = new Map((levelRows ?? []).map((l) => [l.level, l.art_tier]));
+  const approvedMap  = new Map<string, number>();
+  const contestedMap = new Map<string, number>();
+  for (const s of subRows ?? []) {
+    if (s.status === "approved") {
+      approvedMap.set(s.user_id, (approvedMap.get(s.user_id) ?? 0) + 1);
+    } else {
+      contestedMap.set(s.user_id, (contestedMap.get(s.user_id) ?? 0) + 1);
+    }
+  }
+
   const ranking = (users ?? []).map((u) => ({
     ...u,
-    art_tier: tierMap.get(u.level) ?? 1,
+    art_tier:      tierMap.get(u.level)      ?? 1,
+    approvedCount: approvedMap.get(u.id)     ?? 0,
+    contestedCount: contestedMap.get(u.id)   ?? 0,
   }));
 
   return NextResponse.json({ ranking });
