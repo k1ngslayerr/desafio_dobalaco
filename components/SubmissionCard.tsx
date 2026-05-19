@@ -100,7 +100,7 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
           <>
             <div
               className={cn(
-                "relative w-full aspect-square bg-muted",
+                "relative w-full aspect-square sm:aspect-video bg-muted",
                 signedPhotoUrl && "cursor-zoom-in"
               )}
               onClick={() => signedPhotoUrl && setLightboxOpen(true)}
