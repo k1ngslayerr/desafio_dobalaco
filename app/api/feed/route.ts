@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       id, photo_url, title, description, status, xp_awarded, created_at,
       user:users!user_id(id, username, avatar_url),
       challenge:challenges(title, xp_reward),
-      reactions(type, user_id)
+      reactions(type, user_id, user:users!user_id(username, avatar_url))
     `)
     .order("created_at", { ascending: false })
     .limit(limit + 1);
@@ -61,6 +61,8 @@ export async function GET(request: Request) {
       positive: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "positive").length,
       negative: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "negative").length,
     },
+    reactionUsers: (s.reactions as Array<{ type: string; user_id: string; user: { username: string; avatar_url: string | null } }>)
+      .map((r) => ({ user_id: r.user_id, username: r.user.username, avatar_url: r.user.avatar_url, type: r.type as "positive" | "negative" })),
     userReaction:
       (s.reactions as Array<{ type: string; user_id: string }>)
         .find((r) => r.user_id === user.id)?.type ?? null,

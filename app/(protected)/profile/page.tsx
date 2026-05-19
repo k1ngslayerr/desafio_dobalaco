@@ -73,6 +73,8 @@ export default function ProfilePage() {
             positive: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "positive").length,
             negative: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "negative").length,
           },
+          reactionUsers: (s.reactions as Array<{ type: string; user_id: string; user: { username: string; avatar_url: string | null } }>)
+            .map((r) => ({ user_id: r.user_id, username: r.user.username, avatar_url: r.user.avatar_url, type: r.type as "positive" | "negative" })),
           userReaction: (s.reactions as Array<{ type: string; user_id: string }>)
             .find((r) => r.user_id === userId)?.type as "positive" | "negative" | null ?? null,
           currentUserId: userId,

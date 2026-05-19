@@ -41,7 +41,7 @@ export async function GET(
         "id, photo_url, title, description, status, xp_awarded, created_at, " +
         "user:users!user_id(id, username, avatar_url), " +
         "challenge:challenges(title, xp_reward), " +
-        "reactions(type, user_id)"
+        "reactions(type, user_id, user:users!user_id(username, avatar_url))"
       )
       .eq("user_id", target.id)
       .eq("status", "approved")

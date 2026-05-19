@@ -13,6 +13,13 @@ import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { useSignedUrl } from "@/lib/storage/use-signed-url";
 import { cn } from "@/lib/utils";
 
+export interface ReactionUser {
+  user_id: string;
+  username: string;
+  avatar_url: string | null;
+  type: "positive" | "negative";
+}
+
 export interface SubmissionCardData {
   id: string;
   photo_url: string | null;
@@ -34,6 +41,7 @@ export interface SubmissionCardData {
     positive: number;
     negative: number;
   };
+  reactionUsers?: ReactionUser[];
   userReaction: "positive" | "negative" | null;
   currentUserId: string | null;
 }
@@ -48,6 +56,14 @@ const statusConfig = {
 interface SubmissionCardProps {
   data: SubmissionCardData;
   showChallenge?: boolean;
+}
+
+function formatReactors(users: ReactionUser[], type: "positive" | "negative"): string | null {
+  const list = users.filter((u) => u.type === type);
+  if (!list.length) return null;
+  if (list.length === 1) return `@${list[0].username}`;
+  if (list.length === 2) return `@${list[0].username} e @${list[1].username}`;
+  return `@${list[0].username}, @${list[1].username} e mais ${list.length - 2}`;
 }
 
 export function SubmissionCard({ data, showChallenge = false }: SubmissionCardProps) {
@@ -164,6 +180,28 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
             </span>
           )}
         </div>
+
+        {/* Who reacted */}
+        {data.reactionUsers && data.reactionUsers.length > 0 && (() => {
+          const pos = formatReactors(data.reactionUsers, "positive");
+          const neg = formatReactors(data.reactionUsers, "negative");
+          return (
+            <div className="px-4 pb-3 space-y-0.5">
+              {pos && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="mr-1">👍</span>
+                  <span className="font-medium text-foreground/80">{pos}</span>
+                </p>
+              )}
+              {neg && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="mr-1">👎</span>
+                  <span className="font-medium text-foreground/80">{neg}</span>
+                </p>
+              )}
+            </div>
+          );
+        })()}
       </CardContent>
     </Card>
   );

@@ -28,7 +28,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       `id, photo_url, title, description, status, xp_awarded, created_at, challenge_id,
        user:users!user_id(id, username, avatar_url),
        challenge:challenges(title, xp_reward),
-       reactions(type, user_id)`
+       reactions(type, user_id, user:users!user_id(username, avatar_url))`
     )
     .eq("id", id)
     .maybeSingle();
