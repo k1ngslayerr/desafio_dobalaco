@@ -17,6 +17,7 @@ import { SubmissionCard, type SubmissionCardData } from "@/components/Submission
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { resolveReactionUser } from "@/lib/supabase/resolve-embedded";
 
 interface DashboardFeedProps {
   currentUserId: string;
@@ -109,8 +110,8 @@ export function DashboardFeed({ currentUserId }: DashboardFeedProps) {
               negative: (raw.reactions as Array<{ type: string }>)
                 .filter((r) => r.type === "negative").length,
             },
-            reactionUsers: (raw.reactions as unknown as Array<{ type: string; user_id: string; user: Array<{ username: string; avatar_url: string | null }> }>)
-              .map((r) => ({ user_id: r.user_id, username: r.user[0]?.username ?? "", avatar_url: r.user[0]?.avatar_url ?? null, type: r.type as "positive" | "negative" })),
+            reactionUsers: (raw.reactions as Array<{ type: string; user_id: string; user: unknown }>)
+              .map((r) => ({ user_id: r.user_id, ...resolveReactionUser(r.user), type: r.type as "positive" | "negative" })),
             userReaction:
               (raw.reactions as Array<{ type: string; user_id: string }>)
                 .find((r) => r.user_id === currentUserId)
@@ -164,8 +165,8 @@ export function DashboardFeed({ currentUserId }: DashboardFeedProps) {
                   positive: rs.filter((r) => r.type === "positive").length,
                   negative: rs.filter((r) => r.type === "negative").length,
                 },
-                reactionUsers: (rs as unknown as Array<{ type: string; user_id: string; user: Array<{ username: string; avatar_url: string | null }> }>)
-                  .map((r) => ({ user_id: r.user_id, username: r.user[0]?.username ?? "", avatar_url: r.user[0]?.avatar_url ?? null, type: r.type as "positive" | "negative" })),
+                reactionUsers: (rs as Array<{ type: string; user_id: string; user: unknown }>)
+                  .map((r) => ({ user_id: r.user_id, ...resolveReactionUser(r.user), type: r.type as "positive" | "negative" })),
                 userReaction:
                   rs.find((r) => r.user_id === currentUserId)
                     ?.type as "positive" | "negative" | null ?? null,

@@ -59,7 +59,8 @@ interface SubmissionCardProps {
 }
 
 function formatReactors(users: ReactionUser[], type: "positive" | "negative"): string | null {
-  const list = users.filter((u) => u.type === type);
+  // Guard against empty usernames (can happen if the join resolved unexpectedly)
+  const list = users.filter((u) => u.type === type && u.username);
   if (!list.length) return null;
   if (list.length === 1) return `@${list[0].username}`;
   if (list.length === 2) return `@${list[0].username} e @${list[1].username}`;
