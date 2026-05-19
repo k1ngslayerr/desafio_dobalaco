@@ -10,8 +10,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ReactionButtons } from "@/components/ReactionButtons";
 import { PhotoLightbox } from "@/components/PhotoLightbox";
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { useSignedUrl } from "@/lib/storage/use-signed-url";
 import { cn } from "@/lib/utils";
+import { X } from "lucide-react";
 
 export interface ReactionUser {
   user_id: string;
@@ -74,7 +76,8 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
   const hasPhoto = !!data.photo_url;
   const hasText = !!(data.title || data.description);
 
-  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen]     = useState(false);
+  const [reactorsOpen, setReactorsOpen]     = useState(false);
 
   // Private bucket: generate signed URLs on demand
   const signedPhotoUrl  = useSignedUrl("submissions", data.photo_url);
@@ -182,25 +185,85 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
           )}
         </div>
 
-        {/* Who reacted */}
+        {/* Who reacted — click to open full list */}
         {data.reactionUsers && data.reactionUsers.length > 0 && (() => {
           const pos = formatReactors(data.reactionUsers, "positive");
           const neg = formatReactors(data.reactionUsers, "negative");
+          const hasMore = data.reactionUsers.some((_, i) => i >= 2);
           return (
-            <div className="px-4 pb-3 space-y-0.5">
-              {pos && (
-                <p className="text-xs text-muted-foreground">
-                  <span className="mr-1">👍</span>
-                  <span className="font-medium text-foreground/80">{pos}</span>
-                </p>
-              )}
-              {neg && (
-                <p className="text-xs text-muted-foreground">
-                  <span className="mr-1">👎</span>
-                  <span className="font-medium text-foreground/80">{neg}</span>
-                </p>
-              )}
-            </div>
+            <>
+              <button
+                onClick={() => setReactorsOpen(true)}
+                className="w-full px-4 pb-3 text-left space-y-0.5 group"
+              >
+                {pos && (
+                  <p className="text-xs text-muted-foreground group-hover:text-foreground/70 transition-colors">
+                    <span className="mr-1">👍</span>
+                    <span className="font-medium text-foreground/80">{pos}</span>
+                    {hasMore && <span className="text-violet-400 ml-1 text-[10px]">ver todos</span>}
+                  </p>
+                )}
+                {neg && (
+                  <p className="text-xs text-muted-foreground group-hover:text-foreground/70 transition-colors">
+                    <span className="mr-1">👎</span>
+                    <span className="font-medium text-foreground/80">{neg}</span>
+                  </p>
+                )}
+              </button>
+
+              {/* Full reactors list modal */}
+              <DialogPrimitive.Root open={reactorsOpen} onOpenChange={(o) => { if (!o) setReactorsOpen(false); }}>
+                <DialogPrimitive.Portal>
+                  <DialogPrimitive.Backdrop
+                    className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm
+                      data-open:animate-in data-open:fade-in-0
+                      data-closed:animate-out data-closed:fade-out-0 duration-150"
+                  />
+                  <DialogPrimitive.Popup
+                    className="fixed top-1/2 left-1/2 z-50 w-full max-w-xs -translate-x-1/2 -translate-y-1/2
+                      rounded-xl bg-popover ring-1 ring-foreground/10 shadow-xl outline-none
+                      data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95
+                      data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 duration-150"
+                  >
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                      <p className="font-semibold text-sm">Reações</p>
+                      <DialogPrimitive.Close
+                        className="rounded-full p-1 hover:bg-muted transition-colors"
+                        aria-label="Fechar"
+                      >
+                        <X className="h-4 w-4 text-muted-foreground" />
+                      </DialogPrimitive.Close>
+                    </div>
+
+                    <div className="divide-y divide-border max-h-72 overflow-y-auto">
+                      {(["positive", "negative"] as const).map((type) => {
+                        const group = data.reactionUsers!.filter((u) => u.type === type && u.username);
+                        if (!group.length) return null;
+                        return (
+                          <div key={type} className="px-4 py-2">
+                            <p className="text-xs text-muted-foreground mb-2">
+                              {type === "positive" ? "👍 Curtidas" : "👎 Não curtidas"}
+                            </p>
+                            <ul className="space-y-2">
+                              {group.map((u) => (
+                                <li key={u.user_id} className="flex items-center gap-2 text-sm">
+                                  <Avatar className="h-6 w-6 shrink-0">
+                                    <AvatarFallback className="text-[10px]">
+                                      {u.username.slice(0, 2).toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="font-medium">@{u.username}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </DialogPrimitive.Popup>
+                </DialogPrimitive.Portal>
+              </DialogPrimitive.Root>
+            </>
           );
         })()}
       </CardContent>
