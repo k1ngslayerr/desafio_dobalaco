@@ -167,8 +167,8 @@ export default function UserProfilePage() {
               positive: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "positive").length,
               negative: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "negative").length,
             },
-            reactionUsers: (s.reactions as Array<{ type: string; user_id: string; user: { username: string; avatar_url: string | null } }>)
-              .map((r) => ({ user_id: r.user_id, username: r.user.username, avatar_url: r.user.avatar_url, type: r.type as "positive" | "negative" })),
+            reactionUsers: (s.reactions as unknown as Array<{ type: string; user_id: string; user: Array<{ username: string; avatar_url: string | null }> }>)
+              .map((r) => ({ user_id: r.user_id, username: r.user[0]?.username ?? "", avatar_url: r.user[0]?.avatar_url ?? null, type: r.type as "positive" | "negative" })),
             userReaction: (s.reactions as Array<{ type: string; user_id: string }>)
               .find((r) => r.user_id === json.currentUserId)
               ?.type as "positive" | "negative" | null ?? null,
