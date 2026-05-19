@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { LevelArt } from "@/components/LevelArt";
 import { SignedAvatar } from "@/components/SignedAvatar";
 import { Badge } from "@/components/ui/badge";
@@ -83,10 +84,10 @@ export default function RankingPage() {
             const medal = pos <= 3 ? medalConfig[pos - 1] : null;
 
             return (
+              <Link key={user.id} href={`/u/${user.username}`}>
               <Card
-                key={user.id}
                 className={cn(
-                  "p-3 transition-colors",
+                  "p-3 transition-colors cursor-pointer hover:border-violet-500/40 hover:bg-violet-500/5",
                   pos === 1 && "border-yellow-400/30 bg-yellow-400/5",
                   pos === 2 && "border-slate-300/30 bg-slate-300/5",
                   pos === 3 && "border-amber-600/30 bg-amber-600/5"
@@ -138,6 +139,7 @@ export default function RankingPage() {
                   </div>
                 </div>
               </Card>
+              </Link>
             );
           })}
         </div>
