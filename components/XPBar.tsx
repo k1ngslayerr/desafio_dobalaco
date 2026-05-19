@@ -31,12 +31,8 @@ export function XPBar({ currentXP, requiredXP, level, className }: XPBarProps) {
 
   return (
     <div className={cn("w-full space-y-1", className)}>
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>Nível {level}</span>
-        <span>
-          {displayXP.toLocaleString()} / {requiredXP.toLocaleString()} XP
-        </span>
-      </div>
+      {/* Level label — alone on its own row so it can't merge with the XP number */}
+      <p className="text-xs text-muted-foreground">Nível {level}</p>
 
       {/* Track */}
       <div className="relative h-3 w-full overflow-hidden rounded-full bg-secondary">
@@ -59,9 +55,11 @@ export function XPBar({ currentXP, requiredXP, level, className }: XPBarProps) {
         />
       </div>
 
-      <p className="text-right text-xs font-medium text-muted-foreground">
-        {pct}%
-      </p>
+      {/* XP progress + percentage — below bar, clearly separated from level */}
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>{displayXP.toLocaleString()} / {requiredXP.toLocaleString()} XP</span>
+        <span className="font-medium">{pct}%</span>
+      </div>
     </div>
   );
 }
