@@ -18,6 +18,21 @@ import {
 import { toast } from "sonner";
 import { Loader2, CheckCircle2, AlertTriangle, ThumbsUp, ThumbsDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSignedUrl } from "@/lib/storage/use-signed-url";
+
+// Photo thumbnail — needs its own component so the hook can be called per-item
+function SignedThumbnail({ path }: { path: string }) {
+  const signedUrl = useSignedUrl("submissions", path);
+  return (
+    <div className="relative h-32 w-full sm:w-48 shrink-0 rounded-md overflow-hidden bg-muted">
+      {signedUrl ? (
+        <Image src={signedUrl} alt="Submission" fill className="object-cover" unoptimized />
+      ) : (
+        <div className="absolute inset-0 animate-pulse bg-muted-foreground/10" />
+      )}
+    </div>
+  );
+}
 
 interface Submission {
   id: string;
@@ -141,12 +156,8 @@ export default function AdminSubmissionsPage() {
             <Card key={sub.id}>
               <CardContent className="p-4">
                 <div className="flex flex-col sm:flex-row gap-4">
-                  {/* Photo thumbnail (only when photo exists) */}
-                  {sub.photo_url && (
-                    <div className="relative h-32 w-full sm:w-48 shrink-0 rounded-md overflow-hidden bg-muted">
-                      <Image src={sub.photo_url} alt="Submission" fill className="object-cover" />
-                    </div>
-                  )}
+                  {/* Photo thumbnail — signed URL required (private bucket) */}
+                  {sub.photo_url && <SignedThumbnail path={sub.photo_url} />}
 
                   {/* Details */}
                   <div className="flex-1 space-y-2 min-w-0">
