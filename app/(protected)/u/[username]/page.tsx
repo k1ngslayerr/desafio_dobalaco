@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import { LevelArt } from "@/components/LevelArt";
@@ -14,7 +14,7 @@ import { useSignedUrl } from "@/lib/storage/use-signed-url";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { Badge } from "@/components/ui/badge";
 import { resolveReactionUser } from "@/lib/supabase/resolve-embedded";
-import { Loader2, ImageOff, X, FileText } from "lucide-react";
+import { Loader2, ImageOff, X, FileText, CheckCircle2, Clock, AlertTriangle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -31,6 +31,16 @@ interface Profile {
   next_xp: number;
 }
 
+// ── Status badge config for thumbnails ────────────────────────────────────────
+
+const thumbStatus = {
+  approved:  { Icon: CheckCircle2,  bg: "bg-emerald-500" },
+  pending:   { Icon: Clock,         bg: "bg-amber-500"   },
+  contested: { Icon: AlertTriangle, bg: "bg-orange-500"  },
+  rejected:  { Icon: XCircle,       bg: "bg-red-500"     },
+  failed:    { Icon: XCircle,       bg: "bg-rose-600"    },
+} satisfies Record<SubmissionCardData["status"], { Icon: React.ElementType; bg: string }>;
+
 // ── Thumbnail cell ─────────────────────────────────────────────────────────────
 
 function SubmissionThumb({
@@ -41,6 +51,7 @@ function SubmissionThumb({
   onClick: () => void;
 }) {
   const signedUrl = useSignedUrl("submissions", sub.photo_url);
+  const badge = thumbStatus[sub.status];
 
   return (
     <button
@@ -67,6 +78,16 @@ function SubmissionThumb({
           <p className="text-[10px] text-muted-foreground line-clamp-2 text-center leading-tight">
             {sub.title}
           </p>
+        </div>
+      )}
+
+      {/* Status badge — top-right corner */}
+      {badge && (
+        <div className={cn(
+          "absolute top-1.5 right-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full shadow-md",
+          badge.bg
+        )}>
+          <badge.Icon className="h-3 w-3 text-white" />
         </div>
       )}
 
@@ -157,6 +178,7 @@ export default function UserProfilePage() {
           (json.submissions as any[]).map((s) => ({
             id:          s.id,
             photo_url:   s.photo_url,
+            photo_url_2: s.photo_url_2 ?? null,
             title:       s.title   ?? null,
             description: s.description ?? null,
             status:      s.status  as SubmissionCardData["status"],
@@ -260,7 +282,7 @@ export default function UserProfilePage() {
       {submissions.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
           <ImageOff className="h-8 w-8" />
-          <p className="text-sm">Nenhum post aprovado ainda.</p>
+          <p className="text-sm">Nenhum post ainda.</p>
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-0.5">

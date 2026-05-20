@@ -44,7 +44,6 @@ export async function GET(
         "reactions(type, user_id, user:users!user_id(username, avatar_url))"
       )
       .eq("user_id", target.id)
-      .eq("status", "approved")
       .order("created_at", { ascending: false }),
   ]);
 
