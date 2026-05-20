@@ -82,7 +82,10 @@ export async function POST(request: Request) {
   }
 
   // Validate photo requirement
-  if (challenge.requires_photo && (!file || !(file instanceof File))) {
+  // [SECURITY] size > 0 is essential — an empty File instance would otherwise
+  // bypass this check and end up creating a submission with photo_url=null
+  // even when the challenge requires a photo.
+  if (challenge.requires_photo && (!file || !(file instanceof File) || file.size === 0)) {
     return NextResponse.json({ error: "Foto é obrigatória para este desafio" }, { status: 400 });
   }
 
@@ -123,12 +126,18 @@ export async function POST(request: Request) {
 
   const adminUpload = await createAdminClient();
 
+  // Capture verified IDs in local consts so the closure's type narrowing holds
+  // (TypeScript doesn't propagate `user`/`challenge` non-null assertions into
+  // closures defined later in the same function).
+  const ownerId    = user.id;
+  const challengeId = challenge.id;
+
   async function uploadPhoto(f: File, label: string): Promise<{ path: string } | { error: string }> {
     if (f.size > 5 * 1024 * 1024) return { error: `${label}: arquivo muito grande (máx 5 MB)` };
     const buffer = await f.arrayBuffer();
     const mimeResult = await checkImageMime(buffer);
     if (!mimeResult.valid) return { error: mimeResult.error ?? `${label}: formato inválido` };
-    const path = buildStoragePath(user.id, challenge.id, f.name);
+    const path = buildStoragePath(ownerId, challengeId, f.name);
     const { error: uploadError } = await adminUpload.storage
       .from("submissions")
       .upload(path, Buffer.from(buffer), { contentType: mimeResult.mime, upsert: false });

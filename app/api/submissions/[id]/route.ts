@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { submissionLimiter } from "@/lib/rate-limit";
 import { checkImageMime } from "@/lib/security/mime-check";
 import { buildStoragePath } from "@/lib/security/sanitize";
 import { z } from "zod";
@@ -47,12 +48,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 // DELETE /api/submissions/[id] – owner deletes their own submission.
-// If the submission was approved, XP is deducted and the level is recalculated.
+// XP rollback + row delete happens atomically inside a Postgres function
+// (rollback_and_delete_submission) to prevent race-condition exploits where
+// two concurrent deletes would only deduct one submission's worth of XP.
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+
+  // [SECURITY] Rate limit by user.id — without this an attacker could spam
+  // DELETE requests to exploit any future race conditions or DoS the storage API.
+  const { success: rateOk } = await submissionLimiter.limit(`del:${user.id}`);
+  if (!rateOk) {
+    return NextResponse.json({ error: "Muitas tentativas. Aguarde um momento." }, { status: 429 });
   }
 
   const { id } = await params;
@@ -62,61 +72,29 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   const admin = await createAdminClient();
 
-  // [SECURITY] Verify ownership before any mutation
-  const { data: existing } = await admin
-    .from("submissions")
-    .select("id, user_id, photo_url, photo_url_2, status, xp_awarded")
-    .eq("id", id)
-    .maybeSingle();
+  // [SECURITY] Atomic: lock row, rollback XP (if approved), delete.
+  // The RPC also enforces ownership (defense in depth).
+  // [SECURITY] Unified error path: do not distinguish "not found" vs "not owner"
+  // — both return 404 so an attacker can't enumerate valid submission IDs.
+  const { data: rpcRows, error: rpcError } = await admin.rpc(
+    "rollback_and_delete_submission",
+    { _submission_id: id, _caller_id: user.id }
+  );
 
-  if (!existing) {
-    return NextResponse.json({ error: "Submissão não encontrada" }, { status: 404 });
-  }
-  if (existing.user_id !== user.id) {
-    return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
-  }
-
-  // Rollback XP if the submission was approved
-  if (existing.status === "approved" && existing.xp_awarded > 0) {
-    const { data: userData } = await admin
-      .from("users")
-      .select("xp")
-      .eq("id", user.id)
-      .single();
-
-    if (userData) {
-      const newXp = Math.max(0, Number(userData.xp) - existing.xp_awarded);
-
-      // Find the highest level the user qualifies for after XP deduction
-      const { data: levelRows } = await admin
-        .from("level_config")
-        .select("level")
-        .lte("xp_required", newXp)
-        .order("xp_required", { ascending: false })
-        .limit(1);
-      const newLevel = levelRows?.[0]?.level ?? 1;
-
-      await admin
-        .from("users")
-        .update({ xp: newXp, level: newLevel })
-        .eq("id", user.id);
+  if (rpcError) {
+    if (rpcError.code === "P0002" || /not_found_or_forbidden/.test(rpcError.message)) {
+      return NextResponse.json({ error: "Submissão não encontrada" }, { status: 404 });
     }
+    console.error("[submissions DELETE] rpc error:", rpcError.message);
+    return NextResponse.json({ error: "Erro ao apagar submissão" }, { status: 500 });
   }
 
-  // Remove photos from storage (best-effort — don't block deletion on storage errors)
-  const toRemove = [existing.photo_url, existing.photo_url_2].filter(Boolean) as string[];
+  // Best-effort storage cleanup (separate concern; never blocks the API response).
+  // Photo paths come from the RPC's return value, which read them off the locked row.
+  const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+  const toRemove = [row?.photo_url, row?.photo_url_2].filter(Boolean) as string[];
   if (toRemove.length) {
     await admin.storage.from("submissions").remove(toRemove).catch(() => {});
-  }
-
-  const { error: deleteError } = await admin
-    .from("submissions")
-    .delete()
-    .eq("id", id);
-
-  if (deleteError) {
-    console.error("[submissions DELETE] error:", deleteError.message);
-    return NextResponse.json({ error: "Erro ao apagar submissão" }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });
@@ -131,25 +109,45 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
+  // [SECURITY] Rate limit by user.id — without this, an authenticated user
+  // could spam PATCH to upload orphaned files repeatedly (storage abuse).
+  const { success: rateOk } = await submissionLimiter.limit(`patch:${user.id}`);
+  if (!rateOk) {
+    return NextResponse.json({ error: "Muitas tentativas. Aguarde um momento." }, { status: 429 });
+  }
+
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) {
     return NextResponse.json({ error: "ID inválido" }, { status: 400 });
   }
 
-  // [SECURITY] Fetch the submission to verify ownership
+  // [SECURITY] Fetch submission + challenge config to verify ownership AND
+  // the post is in an editable state. We also need requires_photo to enforce
+  // creation-time invariants (title/description mandatory on no-photo challenges).
   const admin = await createAdminClient();
   const { data: existing } = await admin
     .from("submissions")
-    .select("id, user_id, photo_url, challenge_id")
+    .select("id, user_id, photo_url, challenge_id, status, challenge:challenges(requires_photo)")
     .eq("id", id)
     .maybeSingle();
 
-  if (!existing) {
+  // [SECURITY] Unified 404 for not-found and not-owner to avoid ID enumeration
+  if (!existing || existing.user_id !== user.id) {
     return NextResponse.json({ error: "Submissão não encontrada" }, { status: 404 });
   }
-  if (existing.user_id !== user.id) {
-    return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+
+  // [SECURITY] Block edits on terminal states — a contested/rejected post is
+  // evidence of a rule violation. Allowing edits would let the user swap the
+  // photo or rewrite the description after being caught.
+  if (existing.status === "contested" || existing.status === "rejected") {
+    return NextResponse.json(
+      { error: "Submissões contestadas ou rejeitadas não podem ser editadas." },
+      { status: 403 }
+    );
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const requiresPhoto: boolean = (existing.challenge as any)?.requires_photo ?? true;
 
   const formData = await request.formData().catch(() => null);
   if (!formData) {
@@ -160,13 +158,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const descriptionRaw = (formData.get("description") as string | null)?.trim() || null;
   const file           = formData.get("photo") as File | null;
 
-  // Validate text fields
+  // Validate text length
   const textParsed = z.object({
     title:       z.string().max(120).nullable().optional(),
     description: z.string().max(500).nullable().optional(),
   }).safeParse({ title: titleRaw, description: descriptionRaw });
   if (!textParsed.success) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
+  }
+
+  // [SECURITY] Enforce creation-time invariants on edit:
+  // when the challenge has no photo, title + description are required. PATCH
+  // must not let the user clear them to bypass the original create validation.
+  if (!requiresPhoto) {
+    if (!titleRaw) {
+      return NextResponse.json({ error: "Título é obrigatório para este desafio" }, { status: 400 });
+    }
+    if (!descriptionRaw) {
+      return NextResponse.json({ error: "Descrição é obrigatória para este desafio" }, { status: 400 });
+    }
   }
 
   // Handle optional photo replacement
