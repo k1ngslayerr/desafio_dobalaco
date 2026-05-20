@@ -37,6 +37,7 @@ function SignedThumbnail({ path }: { path: string }) {
 interface Submission {
   id: string;
   photo_url: string | null;
+  photo_url_2: string | null;
   title: string | null;
   description: string | null;
   status: string;
@@ -67,7 +68,8 @@ export default function AdminSubmissionsPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ((subs ?? []) as any[]).map((s) => ({
         id: s.id,
-        photo_url: s.photo_url,
+        photo_url:   s.photo_url,
+        photo_url_2: s.photo_url_2 ?? null,
         title: s.title as string | null ?? null,
         description: s.description as string | null ?? null,
         status: s.status,
@@ -156,8 +158,13 @@ export default function AdminSubmissionsPage() {
             <Card key={sub.id}>
               <CardContent className="p-4">
                 <div className="flex flex-col sm:flex-row gap-4">
-                  {/* Photo thumbnail — signed URL required (private bucket) */}
-                  {sub.photo_url && <SignedThumbnail path={sub.photo_url} />}
+                  {/* Photo thumbnails — signed URLs required (private bucket) */}
+                  {sub.photo_url && (
+                    <div className="flex gap-1 shrink-0">
+                      <SignedThumbnail path={sub.photo_url} />
+                      {sub.photo_url_2 && <SignedThumbnail path={sub.photo_url_2} />}
+                    </div>
+                  )}
 
                   {/* Details */}
                   <div className="flex-1 space-y-2 min-w-0">

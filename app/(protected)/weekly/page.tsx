@@ -201,8 +201,15 @@ function CollapsedCell({
   const done = activeGroups.filter((g) => {
     const ch = g.challenges.find((c) => isChallengeActiveOnDay(c, day));
     if (!ch) return false;
-    // Only approved submissions count — contested does not clear the requirement
-    return submissions.some((s) => s.user_id === userId && s.challenge_id === ch.id && s.status === "approved");
+    // Only approved submissions count — contested does not clear the requirement.
+    // For weekly challenges, also match submitted_date so a submission on one
+    // day doesn't appear as done on every other day of the week.
+    return submissions.some((s) =>
+      s.user_id === userId &&
+      s.challenge_id === ch.id &&
+      s.status === "approved" &&
+      (g.frequency !== "weekly" || s.submitted_date === day)
+    );
   }).length;
 
   if (isExcused && done === 0) {
@@ -238,7 +245,13 @@ function ExpandedGroupCell({
     return <Minus className="h-3 w-3 text-muted-foreground/20 mx-auto" />;
   }
 
-  const sub = submissions.find((s) => s.user_id === userId && s.challenge_id === ch.id);
+  // For weekly challenges a single DB record spans the whole week, so we must
+  // additionally filter by submitted_date to avoid showing ✓ on every day once
+  // the user submits once. Daily/streak challenges have a distinct record per
+  // day so ch.id already disambiguates correctly.
+  const sub = group.frequency === "weekly"
+    ? submissions.find((s) => s.user_id === userId && s.challenge_id === ch.id && s.submitted_date === day)
+    : submissions.find((s) => s.user_id === userId && s.challenge_id === ch.id);
   const isExcused = excuses.some((e) => e.user_id === userId && e.excuse_date === day);
 
   if (sub?.status === "approved")  return <CheckCircle2 className="h-4 w-4 text-emerald-400 mx-auto" />;

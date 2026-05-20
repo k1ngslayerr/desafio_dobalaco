@@ -62,6 +62,7 @@ export interface Database {
           challenge_id: string;
           user_id: string;
           photo_url: string | null;
+          photo_url_2: string | null;
           status: SubmissionStatus;
           xp_awarded: number;
           quantity: number | null;
@@ -75,6 +76,7 @@ export interface Database {
           created_at?: string;
           status?: SubmissionStatus;
           xp_awarded?: number;
+          photo_url_2?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["submissions"]["Insert"]>;
       };

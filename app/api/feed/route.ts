@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   let query = supabase
     .from("submissions")
     .select(`
-      id, photo_url, title, description, status, xp_awarded, created_at,
+      id, photo_url, photo_url_2, title, description, status, xp_awarded, created_at,
       user:users!user_id(id, username, avatar_url),
       challenge:challenges(title, xp_reward),
       reactions(type, user_id, user:users!user_id(username, avatar_url))
@@ -49,15 +49,17 @@ export async function GET(request: Request) {
   const page   = rows.slice(0, limit);
 
   const submissions = page.map((s) => ({
-    id:         s.id,
-    photo_url:  s.photo_url,
-    title:      s.title,
+    id:          s.id,
+    photo_url:   s.photo_url,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    photo_url_2: (s as any).photo_url_2 ?? null,
+    title:       s.title,
     description: s.description,
-    status:     s.status,
-    xp_awarded: s.xp_awarded,
-    created_at: s.created_at,
-    user:       s.user,
-    challenge:  s.challenge,
+    status:      s.status,
+    xp_awarded:  s.xp_awarded,
+    created_at:  s.created_at,
+    user:        s.user,
+    challenge:   s.challenge,
     reactions: {
       positive: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "positive").length,
       negative: (s.reactions as Array<{ type: string }>).filter((r) => r.type === "negative").length,

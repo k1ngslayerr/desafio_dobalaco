@@ -52,13 +52,12 @@ interface Challenge {
 }
 
 // Photo is optional at schema level — we validate conditionally in onSubmit
+const fileListValidator = (val: unknown) =>
+  typeof FileList === "undefined" || val === undefined || val === null || val instanceof FileList;
+
 const uploadSchema = z.object({
-  photo: z
-    .custom<FileList>(
-      (val) => typeof FileList === "undefined" || val === undefined || val === null || val instanceof FileList,
-      "Selecione uma imagem"
-    )
-    .optional(),
+  photo: z.custom<FileList>(fileListValidator, "Selecione uma imagem").optional(),
+  photo2: z.custom<FileList>(fileListValidator, "Selecione uma imagem").optional(),
   quantity: z.number().int().min(1, "Informe a quantidade").optional(),
   title: z.string().max(120, "Máximo 120 caracteres").optional(),
   description: z.string().max(500, "Máximo 500 caracteres").optional(),
@@ -183,8 +182,10 @@ export default function ChallengesPage() {
   // Challenges dismissed locally (persisted to DB async — instant UI feedback)
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [preview,  setPreview]  = useState<string | null>(null);
+  const [preview2, setPreview2] = useState<string | null>(null);
+  const fileInputRef  = useRef<HTMLInputElement>(null);
+  const fileInputRef2 = useRef<HTMLInputElement>(null);
 
   // ── Agenda calendar state ─────────────────────────────────
   const [agendaDay, setAgendaDay] = useState<string | null>(null);
@@ -199,7 +200,8 @@ export default function ChallengesPage() {
     formState: { errors },
   } = useForm<UploadInput>({ resolver: zodResolver(uploadSchema) });
 
-  const photoFile = watch("photo");
+  const photoFile  = watch("photo");
+  const photoFile2 = watch("photo2");
   const quantityValue = watch("quantity");
   const titleValue = watch("title");
   const descriptionValue = watch("description");
@@ -212,6 +214,15 @@ export default function ChallengesPage() {
     }
     setPreview(null);
   }, [photoFile]);
+
+  useEffect(() => {
+    if (photoFile2?.[0]) {
+      const url = URL.createObjectURL(photoFile2[0]);
+      setPreview2(url);
+      return () => URL.revokeObjectURL(url);
+    }
+    setPreview2(null);
+  }, [photoFile2]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -290,6 +301,14 @@ export default function ChallengesPage() {
         hasError = true;
       }
     }
+    if (values.photo2?.[0]) {
+      const f = values.photo2[0];
+      if (f.size > 5 * 1024 * 1024) { setError("photo2", { message: "2ª foto: máximo 5 MB" }); hasError = true; }
+      else if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
+        setError("photo2", { message: "Formato inválido. Use JPEG, PNG ou WebP" });
+        hasError = true;
+      }
+    }
     // When no photo required, title and description are required
     if (!selected.requires_photo) {
       if (!values.title?.trim()) {
@@ -314,7 +333,8 @@ export default function ChallengesPage() {
     try {
       const form = new FormData();
       form.append("challenge_id", challengeId);
-      if (values.photo?.[0]) form.append("photo", values.photo[0]);
+      if (values.photo?.[0])  form.append("photo",  values.photo[0]);
+      if (values.photo2?.[0]) form.append("photo2", values.photo2[0]);
       if (values.quantity) form.append("quantity", String(values.quantity));
       if (values.title?.trim()) form.append("title", values.title.trim());
       if (values.description?.trim()) form.append("description", values.description.trim());
@@ -336,6 +356,7 @@ export default function ChallengesPage() {
       setSelected(null);
       reset();
       setPreview(null);
+      setPreview2(null);
       // Hard navigation to the challenge feed — bypasses Next.js router cache
       // so the server re-fetches submissions and the new one appears immediately
       window.location.href = `/challenges/${challengeId}`;
@@ -412,6 +433,7 @@ export default function ChallengesPage() {
     setSelected(ch);
     reset();
     setPreview(null);
+    setPreview2(null);
   }
 
   return (
@@ -647,33 +669,73 @@ export default function ChallengesPage() {
             {/* Photo upload — shown if requires_photo */}
             {selected?.requires_photo ? (
               <>
-                <div
-                  className="relative flex h-48 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-violet-500/50 transition-colors overflow-hidden"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {preview ? (
-                    <Image src={preview} alt="Preview" fill className="object-cover" />
-                  ) : (
-                    <>
-                      <ImageIcon className="h-10 w-10 text-muted-foreground mb-2" />
-                      <p className="text-sm text-muted-foreground">Clique para selecionar</p>
-                      <p className="text-xs text-muted-foreground">JPEG, PNG, WebP · máx 5 MB</p>
-                    </>
+                {/* ── Primary photo (required) ── */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    Foto <span className="text-destructive">*</span>
+                  </Label>
+                  <div
+                    className="relative flex h-48 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-violet-500/50 transition-colors overflow-hidden"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {preview ? (
+                      <Image src={preview} alt="Preview" fill className="object-cover" />
+                    ) : (
+                      <>
+                        <ImageIcon className="h-10 w-10 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">Clique para selecionar</p>
+                        <p className="text-xs text-muted-foreground">JPEG, PNG, WebP · máx 5 MB</p>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    {...register("photo")}
+                    ref={(el) => {
+                      register("photo").ref(el);
+                      (fileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+                    }}
+                  />
+                  {errors.photo && (
+                    <p className="text-xs text-destructive">{errors.photo.message as string}</p>
                   )}
                 </div>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  {...register("photo")}
-                  ref={(el) => {
-                    register("photo").ref(el);
-                    (fileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
-                  }}
-                />
-                {errors.photo && (
-                  <p className="text-xs text-destructive">{errors.photo.message as string}</p>
-                )}
+
+                {/* ── Secondary photo (optional) ── */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    2ª foto{" "}
+                    <span className="text-muted-foreground font-normal">(opcional)</span>
+                  </Label>
+                  <div
+                    className="relative flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-violet-500/50 transition-colors overflow-hidden"
+                    onClick={() => fileInputRef2.current?.click()}
+                  >
+                    {preview2 ? (
+                      <Image src={preview2} alt="Preview 2ª foto" fill className="object-cover" />
+                    ) : (
+                      <>
+                        <ImageIcon className="h-7 w-7 text-muted-foreground/60 mb-1.5" />
+                        <p className="text-xs text-muted-foreground">Clique para adicionar</p>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    {...register("photo2")}
+                    ref={(el) => {
+                      register("photo2").ref(el);
+                      (fileInputRef2 as React.MutableRefObject<HTMLInputElement | null>).current = el;
+                    }}
+                  />
+                  {errors.photo2 && (
+                    <p className="text-xs text-destructive">{errors.photo2.message as string}</p>
+                  )}
+                </div>
               </>
             ) : (
               <div className="flex items-center gap-3 rounded-lg border border-dashed border-sky-500/30 bg-sky-500/5 px-4 py-3">

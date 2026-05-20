@@ -55,7 +55,8 @@ export function FeedRealtime({
 
           const newCard: SubmissionCardData = {
             id: data.id,
-            photo_url: data.photo_url,
+            photo_url:   data.photo_url,
+            photo_url_2: data.photo_url_2 ?? null,
             title: data.title as string | null ?? null,
             description: data.description as string | null ?? null,
             status: data.status,

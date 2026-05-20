@@ -27,7 +27,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { data, error } = await admin
     .from("submissions")
     .select(
-      `id, photo_url, title, description, status, xp_awarded, created_at, challenge_id,
+      `id, photo_url, photo_url_2, title, description, status, xp_awarded, created_at, challenge_id,
        user:users!user_id(id, username, avatar_url),
        challenge:challenges(title, xp_reward),
        reactions(type, user_id, user:users!user_id(username, avatar_url))`
@@ -44,6 +44,82 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   return NextResponse.json({ submission: data });
+}
+
+// DELETE /api/submissions/[id] – owner deletes their own submission.
+// If the submission was approved, XP is deducted and the level is recalculated.
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  if (!z.string().uuid().safeParse(id).success) {
+    return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+  }
+
+  const admin = await createAdminClient();
+
+  // [SECURITY] Verify ownership before any mutation
+  const { data: existing } = await admin
+    .from("submissions")
+    .select("id, user_id, photo_url, photo_url_2, status, xp_awarded")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!existing) {
+    return NextResponse.json({ error: "Submissão não encontrada" }, { status: 404 });
+  }
+  if (existing.user_id !== user.id) {
+    return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+  }
+
+  // Rollback XP if the submission was approved
+  if (existing.status === "approved" && existing.xp_awarded > 0) {
+    const { data: userData } = await admin
+      .from("users")
+      .select("xp")
+      .eq("id", user.id)
+      .single();
+
+    if (userData) {
+      const newXp = Math.max(0, Number(userData.xp) - existing.xp_awarded);
+
+      // Find the highest level the user qualifies for after XP deduction
+      const { data: levelRows } = await admin
+        .from("level_config")
+        .select("level")
+        .lte("xp_required", newXp)
+        .order("xp_required", { ascending: false })
+        .limit(1);
+      const newLevel = levelRows?.[0]?.level ?? 1;
+
+      await admin
+        .from("users")
+        .update({ xp: newXp, level: newLevel })
+        .eq("id", user.id);
+    }
+  }
+
+  // Remove photos from storage (best-effort — don't block deletion on storage errors)
+  const toRemove = [existing.photo_url, existing.photo_url_2].filter(Boolean) as string[];
+  if (toRemove.length) {
+    await admin.storage.from("submissions").remove(toRemove).catch(() => {});
+  }
+
+  const { error: deleteError } = await admin
+    .from("submissions")
+    .delete()
+    .eq("id", id);
+
+  if (deleteError) {
+    console.error("[submissions DELETE] error:", deleteError.message);
+    return NextResponse.json({ error: "Erro ao apagar submissão" }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }
 
 // PATCH /api/submissions/[id] – owner edits their own post (title, description, photo)

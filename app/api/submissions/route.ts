@@ -36,7 +36,8 @@ export async function POST(request: Request) {
   }
 
   const challengeIdRaw = formData.get("challenge_id");
-  const file = formData.get("photo") as File | null;
+  const file  = formData.get("photo")  as File | null;
+  const file2 = formData.get("photo2") as File | null;
   const quantityRaw = formData.get("quantity");
   const titleRaw = (formData.get("title") as string | null)?.trim() || null;
   const descriptionRaw = (formData.get("description") as string | null)?.trim() || null;
@@ -116,37 +117,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Você já enviou uma submissão para este desafio hoje" }, { status: 409 });
   }
 
-  // Handle photo upload (if provided)
-  let storagePath: string | null = null;
+  // Handle photo upload(s) (both optional depending on challenge config)
+  let storagePath:  string | null = null;
+  let storagePath2: string | null = null;
 
-  if (file && file instanceof File) {
-    // [SECURITY] Validate file size server-side (client validation is not sufficient)
-    if (file.size > 5 * 1024 * 1024) {
-      return NextResponse.json({ error: "Arquivo muito grande (máx 5 MB)" }, { status: 400 });
-    }
+  const adminUpload = await createAdminClient();
 
-    // [SECURITY] Read actual bytes and verify magic bytes, not just extension/Content-Type
-    const buffer = await file.arrayBuffer();
+  async function uploadPhoto(f: File, label: string): Promise<{ path: string } | { error: string }> {
+    if (f.size > 5 * 1024 * 1024) return { error: `${label}: arquivo muito grande (máx 5 MB)` };
+    const buffer = await f.arrayBuffer();
     const mimeResult = await checkImageMime(buffer);
-    if (!mimeResult.valid) {
-      return NextResponse.json({ error: mimeResult.error ?? "Formato inválido" }, { status: 400 });
-    }
-
-    // [SECURITY] Upload with UUID filename to prevent path traversal
-    storagePath = buildStoragePath(user.id, challenge.id, file.name);
-
-    const adminClient = await createAdminClient();
-    const { error: uploadError } = await adminClient.storage
+    if (!mimeResult.valid) return { error: mimeResult.error ?? `${label}: formato inválido` };
+    const path = buildStoragePath(user.id, challenge.id, f.name);
+    const { error: uploadError } = await adminUpload.storage
       .from("submissions")
-      .upload(storagePath, Buffer.from(buffer), {
-        contentType: mimeResult.mime,
-        upsert: false,
-      });
-
+      .upload(path, Buffer.from(buffer), { contentType: mimeResult.mime, upsert: false });
     if (uploadError) {
-      console.error("[submissions] upload error:", uploadError.message);
-      return NextResponse.json({ error: "Erro no upload" }, { status: 500 });
+      console.error(`[submissions] ${label} upload error:`, uploadError.message);
+      return { error: `Erro no upload da ${label}` };
     }
+    return { path };
+  }
+
+  if (file && file instanceof File && file.size > 0) {
+    const result = await uploadPhoto(file, "foto");
+    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
+    storagePath = result.path;
+  }
+
+  if (file2 && file2 instanceof File && file2.size > 0) {
+    const result = await uploadPhoto(file2, "2ª foto");
+    if ("error" in result) {
+      // Rollback first upload if already done
+      if (storagePath) await adminUpload.storage.from("submissions").remove([storagePath]).catch(() => {});
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    storagePath2 = result.path;
   }
 
   // Calculate XP for quantifiable challenges
@@ -162,7 +168,8 @@ export async function POST(request: Request) {
   const insertPayload: Record<string, unknown> = {
     challenge_id: challenge.id,
     user_id: user.id,
-    photo_url: storagePath,
+    photo_url:   storagePath,
+    photo_url_2: storagePath2,
     quantity: parsed.data.quantity ?? null,
     submitted_date: todayStr,
     title: titleRaw,
@@ -173,8 +180,7 @@ export async function POST(request: Request) {
 
   // Use admin client to bypass INSERT RLS — user_id is validated above from
   // the authenticated session, so this is safe.
-  const adminInsert = await createAdminClient();
-  const { data: submission, error: insertError } = await adminInsert
+  const { data: submission, error: insertError } = await adminUpload
     .from("submissions")
     .insert(insertPayload)
     .select()
@@ -183,16 +189,14 @@ export async function POST(request: Request) {
   if (insertError) {
     // [SECURITY] Log internally; never leak raw DB error details to the client
     console.error("[submissions] insert error:", insertError.message);
-    // Cleanup orphaned upload
-    if (storagePath) {
-      await adminInsert.storage.from("submissions").remove([storagePath]);
-    }
+    // Cleanup orphaned uploads
+    const toRemove = [storagePath, storagePath2].filter(Boolean) as string[];
+    if (toRemove.length) await adminUpload.storage.from("submissions").remove(toRemove).catch(() => {});
     return NextResponse.json({ error: "Erro ao salvar submission" }, { status: 500 });
   }
 
   // Auto-approve immediately so the DB trigger fires and awards XP right away.
-  const adminClient = await createAdminClient();
-  const { data: approved } = await adminClient
+  const { data: approved } = await adminUpload
     .from("submissions")
     .update({ status: "approved" })
     .eq("id", submission.id)

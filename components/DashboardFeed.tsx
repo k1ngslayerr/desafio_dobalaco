@@ -97,6 +97,7 @@ export function DashboardFeed({ currentUserId }: DashboardFeedProps) {
           const card: SubmissionCardData = {
             id:          raw.id,
             photo_url:   raw.photo_url,
+            photo_url_2: raw.photo_url_2 ?? null,
             title:       raw.title       ?? null,
             description: raw.description ?? null,
             status:      raw.status,

@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Image from "next/image";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CheckCircle2, Clock, XCircle, AlertTriangle, Pencil, X, ImageIcon, Loader2 } from "lucide-react";
+import { CheckCircle2, Clock, XCircle, AlertTriangle, Pencil, Trash2, X, ImageIcon, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -29,6 +29,7 @@ export interface ReactionUser {
 export interface SubmissionCardData {
   id: string;
   photo_url: string | null;
+  photo_url_2?: string | null;
   title?: string | null;
   description?: string | null;
   status: "pending" | "approved" | "contested" | "rejected";
@@ -77,19 +78,24 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
   const isOwner = !!(data.currentUserId && data.currentUserId === data.user.id);
 
   // Local editable state — updated optimistically after a successful PATCH
-  const [localTitle,       setLocalTitle]       = useState(data.title ?? null);
-  const [localDescription, setLocalDescription] = useState(data.description ?? null);
-  const [localPhotoUrl,    setLocalPhotoUrl]     = useState(data.photo_url ?? null);
+  const [localTitle,        setLocalTitle]        = useState(data.title ?? null);
+  const [localDescription,  setLocalDescription]  = useState(data.description ?? null);
+  const [localPhotoUrl,     setLocalPhotoUrl]      = useState(data.photo_url   ?? null);
+  const [localPhotoUrl2,    setLocalPhotoUrl2]     = useState(data.photo_url_2 ?? null);
 
   const cfg = statusConfig[data.status];
   const StatusIcon = cfg.icon;
   const isApproved = data.status === "approved";
-  const hasPhoto = !!localPhotoUrl;
-  const hasText  = !!(localTitle || localDescription);
+  const hasPhoto  = !!localPhotoUrl;
+  const hasPhoto2 = !!localPhotoUrl2;
+  const hasText   = !!(localTitle || localDescription);
 
-  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [deleted,      setDeleted]      = useState(false);
+  const [lightboxSrc,  setLightboxSrc]  = useState<string | null>(null);
   const [reactorsOpen, setReactorsOpen] = useState(false);
   const [editOpen,     setEditOpen]     = useState(false);
+  const [deleteOpen,   setDeleteOpen]   = useState(false);
+  const [deleting,     setDeleting]     = useState(false);
 
   // Edit form state
   const [editTitle,       setEditTitle]       = useState("");
@@ -141,9 +147,27 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/submissions/${data.id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error ?? "Erro ao apagar"); return; }
+      setDeleteOpen(false);
+      toast.success("Submissão apagada.");
+      setDeleted(true);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // Private bucket: generate signed URLs on demand
   const signedPhotoUrl  = useSignedUrl("submissions", localPhotoUrl);
+  const signedPhotoUrl2 = useSignedUrl("submissions", localPhotoUrl2);
   const signedAvatarUrl = useSignedUrl("avatars", data.user.avatar_url);
+
+  // Card hides itself instantly after a successful delete — no parent callback needed
+  if (deleted) return null;
 
   return (
     <Card className={cn(
@@ -169,15 +193,24 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
           </span>
         </div>
 
-        {/* Edit button — owner only */}
+        {/* Edit + Delete buttons — owner only */}
         {isOwner && (
-          <button
-            onClick={openEdit}
-            aria-label="Editar post"
-            className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button
+              onClick={openEdit}
+              aria-label="Editar post"
+              className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setDeleteOpen(true)}
+              aria-label="Apagar submissão"
+              className="rounded-full p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
         )}
 
         {/* Status badge */}
@@ -188,39 +221,72 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
       </CardHeader>
 
       <CardContent className="p-0">
-        {/* Photo – only rendered when a photo exists */}
+        {/* Photos – 1 photo = full-width, 2 photos = side-by-side squares */}
         {hasPhoto && (
           <>
-            <div
-              className={cn(
-                "relative w-full aspect-square sm:aspect-video bg-muted",
-                signedPhotoUrl && "cursor-zoom-in"
-              )}
-              onClick={() => signedPhotoUrl && setLightboxOpen(true)}
-            >
-              {signedPhotoUrl ? (
-                <Image
-                  src={signedPhotoUrl}
-                  alt={`Submission de ${data.user.username}`}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 640px) 100vw, 640px"
-                  unoptimized
-                />
-              ) : (
-                <div className="absolute inset-0 animate-pulse bg-muted" />
-              )}
-              {isApproved && (
-                <div className="absolute inset-0 border-2 border-emerald-500/40 rounded pointer-events-none" />
-              )}
-            </div>
+            {hasPhoto2 ? (
+              /* Two photos side by side */
+              <div className="grid grid-cols-2 gap-0.5 bg-muted">
+                {([
+                  { url: signedPhotoUrl,  label: "1" },
+                  { url: signedPhotoUrl2, label: "2" },
+                ] as const).map(({ url, label }) => (
+                  <div
+                    key={label}
+                    className={cn("relative aspect-square bg-muted", url && "cursor-zoom-in")}
+                    onClick={() => url && setLightboxSrc(url)}
+                  >
+                    {url ? (
+                      <Image
+                        src={url}
+                        alt={`Foto ${label} de ${data.user.username}`}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 640px) 50vw, 320px"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="absolute inset-0 animate-pulse bg-muted" />
+                    )}
+                    {isApproved && (
+                      <div className="absolute inset-0 border-2 border-emerald-500/40 rounded pointer-events-none" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Single photo – full width */
+              <div
+                className={cn(
+                  "relative w-full aspect-square sm:aspect-video bg-muted",
+                  signedPhotoUrl && "cursor-zoom-in"
+                )}
+                onClick={() => signedPhotoUrl && setLightboxSrc(signedPhotoUrl)}
+              >
+                {signedPhotoUrl ? (
+                  <Image
+                    src={signedPhotoUrl}
+                    alt={`Submission de ${data.user.username}`}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 640px) 100vw, 640px"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="absolute inset-0 animate-pulse bg-muted" />
+                )}
+                {isApproved && (
+                  <div className="absolute inset-0 border-2 border-emerald-500/40 rounded pointer-events-none" />
+                )}
+              </div>
+            )}
 
-            {signedPhotoUrl && (
+            {lightboxSrc && (
               <PhotoLightbox
-                src={signedPhotoUrl}
+                src={lightboxSrc}
                 alt={`Submission de ${data.user.username}`}
-                open={lightboxOpen}
-                onClose={() => setLightboxOpen(false)}
+                open={!!lightboxSrc}
+                onClose={() => setLightboxSrc(null)}
               />
             )}
           </>
@@ -451,6 +517,73 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
                     {saving
                       ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando…</>
                       : "Salvar"}
+                  </Button>
+                </div>
+              </div>
+            </DialogPrimitive.Popup>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
+      )}
+      {/* ── Delete confirmation dialog (owner only) ─────────────── */}
+      {isOwner && (
+        <DialogPrimitive.Root open={deleteOpen} onOpenChange={(o) => { if (!o && !deleting) setDeleteOpen(false); }}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Backdrop
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm
+                data-open:animate-in data-open:fade-in-0
+                data-closed:animate-out data-closed:fade-out-0 duration-150"
+            />
+            <DialogPrimitive.Popup
+              className="fixed top-1/2 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2
+                rounded-xl bg-popover ring-1 ring-foreground/10 shadow-xl outline-none
+                data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95
+                data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 duration-150"
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                <p className="font-semibold text-sm text-red-400">Apagar submissão</p>
+                <DialogPrimitive.Close
+                  className="rounded-full p-1 hover:bg-muted transition-colors"
+                  aria-label="Fechar"
+                  disabled={deleting}
+                >
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </DialogPrimitive.Close>
+              </div>
+
+              <div className="p-4 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Tem certeza que quer apagar esta submissão? Esta ação não pode ser desfeita.
+                </p>
+
+                {/* Warn about XP loss only when approved */}
+                {data.status === "approved" && data.xp_awarded > 0 && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+                    <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-400">
+                      Como esta submissão foi aprovada, os{" "}
+                      <strong>+{data.xp_awarded} XP</strong> serão descontados do seu total.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setDeleteOpen(false)}
+                    disabled={deleting}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    {deleting
+                      ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Apagando…</>
+                      : <><Trash2 className="mr-2 h-4 w-4" />Apagar</>}
                   </Button>
                 </div>
               </div>
