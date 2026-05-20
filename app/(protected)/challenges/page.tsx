@@ -45,7 +45,6 @@ interface Challenge {
   max_quantity: number | null;
   starts_at: string | null;
   ends_at: string | null;
-  // For daily: submitted today or yesterday (grace period). For weekly: how many times this week.
   submittedToday:     boolean;
   submittedYesterday: boolean;
   failedToday:        boolean;
@@ -64,32 +63,22 @@ const uploadSchema = z.object({
   description: z.string().max(500, "Máximo 500 caracteres").optional(),
 });
 
-const failSchema = z.object({
-  photo: z.custom<FileList>(fileListValidator, "Selecione uma imagem").optional(),
-  title: z.string().max(120, "Máximo 120 caracteres").optional(),
-  description: z.string().max(500, "Máximo 500 caracteres").optional(),
-});
-
 type UploadInput = z.infer<typeof uploadSchema>;
-type FailInput  = z.infer<typeof failSchema>;
 
-// ── Challenge card (top-level to avoid remount on every render) ──────────────
+// ── Challenge card ────────────────────────────────────────────────────────────
 
 interface ChallengeCardItemProps {
   ch: Challenge;
   isGrace: boolean;
   onDismiss: (id: string) => void;
   onOpen: (ch: Challenge) => void;
-  onFail: (ch: Challenge) => void;
 }
 
-function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen, onFail }: ChallengeCardItemProps) {
+function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen }: ChallengeCardItemProps) {
   const isWeekly = ch.frequency === "weekly";
   const weeklyDone = isWeekly && ch.weeklyCount >= ch.weekly_target;
-  // Grace-period cards count a submission from yesterday OR today as "done"
   const dailyDone = !isWeekly && (ch.submittedToday || (isGrace && ch.submittedYesterday));
   const isDone = isWeekly ? weeklyDone : dailyDone;
-  // Label reflects when the submission happened
   const doneLabel = isWeekly
     ? "Meta da semana atingida"
     : ch.submittedToday
@@ -103,7 +92,6 @@ function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen, onFail }: Challenge
         isGrace && "opacity-80 border-dashed"
       )}
     >
-      {/* Dismiss button — top-right corner, only for incomplete challenges */}
       {!isDone && !ch.failedToday && (
         <button
           onClick={() => onDismiss(ch.id)}
@@ -125,7 +113,6 @@ function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen, onFail }: Challenge
           </Badge>
         </div>
         <CardDescription className="line-clamp-3 text-xs">{ch.description}</CardDescription>
-        {/* Indicator badges */}
         <div className="flex flex-wrap gap-1 mt-1.5">
           {isWeekly && (
             <Badge variant="outline" className="text-xs text-amber-400 border-amber-500/30 py-0">
@@ -181,15 +168,6 @@ function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen, onFail }: Challenge
             <Button size="sm" className="flex-1" onClick={() => onOpen(ch)}>
               <Upload className="mr-1.5 h-3.5 w-3.5" /> Enviar
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="shrink-0 text-muted-foreground hover:text-rose-400"
-              title="Não completei"
-              onClick={() => onFail(ch)}
-            >
-              <XCircle className="h-4 w-4" />
-            </Button>
             <Link href={`/challenges/${ch.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
               <ArrowRight className="h-4 w-4" />
             </Link>
@@ -209,20 +187,16 @@ export default function ChallengesPage() {
   const [currentPenalty, setCurrentPenalty] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Challenge | null>(null);
-  const [selectedFail, setSelectedFail] = useState<Challenge | null>(null);
+  // When true, the modal is in "Não completei" mode — all fields optional, submits as failed
+  const [isFailing, setIsFailing] = useState(false);
   const [yesterdayStr, setYesterdayStr] = useState<string>("");
-  // Challenges dismissed locally (persisted to DB async — instant UI feedback)
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
-  const [failUploading, setFailUploading] = useState(false);
   const [preview,  setPreview]  = useState<string | null>(null);
   const [preview2, setPreview2] = useState<string | null>(null);
-  const [failPreview, setFailPreview] = useState<string | null>(null);
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
-  const failFileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Agenda calendar state ─────────────────────────────────
   const [agendaDay, setAgendaDay] = useState<string | null>(null);
   const [agendaWeekStart, setAgendaWeekStart] = useState<string | null>(null);
 
@@ -235,24 +209,11 @@ export default function ChallengesPage() {
     formState: { errors },
   } = useForm<UploadInput>({ resolver: zodResolver(uploadSchema) });
 
-  const {
-    register: registerFail,
-    handleSubmit: handleSubmitFail,
-    reset: resetFail,
-    watch: watchFail,
-    setError: setErrorFail,
-    formState: { errors: errorsFail },
-  } = useForm<FailInput>({ resolver: zodResolver(failSchema) });
-
   const photoFile  = watch("photo");
   const photoFile2 = watch("photo2");
   const quantityValue = watch("quantity");
   const titleValue = watch("title");
   const descriptionValue = watch("description");
-
-  const failPhotoFile = watchFail("photo");
-  const failTitleValue = watchFail("title");
-  const failDescriptionValue = watchFail("description");
 
   useEffect(() => {
     if (photoFile?.[0]) {
@@ -272,23 +233,12 @@ export default function ChallengesPage() {
     setPreview2(null);
   }, [photoFile2]);
 
-  useEffect(() => {
-    if (failPhotoFile?.[0]) {
-      const url = URL.createObjectURL(failPhotoFile[0]);
-      setFailPreview(url);
-      return () => URL.revokeObjectURL(url);
-    }
-    setFailPreview(null);
-  }, [failPhotoFile]);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // All data fetched server-side so httpOnly session cookies are read correctly.
       const res = await fetch("/api/challenges");
-      if (!res.ok) { return; }
+      if (!res.ok) return;
       const json = await res.json();
-
       const { challenges: chData, submissions: subData, currentPenalty: penalty, scheduled: sched, todayStr, yesterdayStr: yd } = json;
 
       setCurrentPenalty(penalty ?? null);
@@ -296,13 +246,10 @@ export default function ChallengesPage() {
       setYesterdayStr(yd ?? "");
 
       const weekSubs = (subData as { challenge_id: string; submitted_date: string; status: string }[]) ?? [];
-      // Only successful (approved/pending) submissions count as "done"
       const successSubs    = weekSubs.filter((s) => s.status !== "failed");
       const todaySet       = new Set(successSubs.filter((s) => s.submitted_date === todayStr).map((s) => s.challenge_id));
       const yesterdaySet   = new Set(successSubs.filter((s) => s.submitted_date === (yd ?? "")).map((s) => s.challenge_id));
-      // Failed submissions today
       const failedTodaySet = new Set(weekSubs.filter((s) => s.status === "failed" && s.submitted_date === todayStr).map((s) => s.challenge_id));
-      // Weekly count excludes failed submissions
       const weeklyCountMap: Record<string, number> = {};
       for (const s of successSubs) {
         weeklyCountMap[s.challenge_id] = (weeklyCountMap[s.challenge_id] ?? 0) + 1;
@@ -325,7 +272,6 @@ export default function ChallengesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Dismiss a challenge: optimistic UI + async DB write
   async function dismiss(challengeId: string) {
     setDismissedIds((prev) => new Set([...prev, challengeId]));
     try {
@@ -334,13 +280,9 @@ export default function ChallengesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challenge_id: challengeId }),
       });
-    } catch {
-      // If it fails the dismissal is still applied locally for this session;
-      // it'll reappear on the next page load, which is acceptable.
-    }
+    } catch { /* silent — optimistic dismiss already applied */ }
   }
 
-  // Estimate XP for quantifiable challenges
   const estimatedXP = (() => {
     if (!selected?.xp_per_unit || !quantityValue) return null;
     return Math.min(quantityValue * selected.xp_per_unit, selected.xp_reward);
@@ -349,9 +291,42 @@ export default function ChallengesPage() {
   async function onSubmit(values: UploadInput) {
     if (!selected) return;
 
+    // ── "Não completei" path — all fields are optional ──────────────────────
+    if (isFailing) {
+      if (values.photo?.[0]) {
+        const f = values.photo[0];
+        if (f.size > 5 * 1024 * 1024) { setError("photo", { message: "Imagem deve ter no máximo 5 MB" }); return; }
+        if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
+          setError("photo", { message: "Formato inválido. Use JPEG, PNG ou WebP" }); return;
+        }
+      }
+
+      setUploading(true);
+      const challengeId = selected.id;
+      try {
+        const form = new FormData();
+        form.append("challenge_id", challengeId);
+        form.append("failed", "true");
+        if (values.photo?.[0])         form.append("photo",       values.photo[0]);
+        if (values.title?.trim())       form.append("title",       values.title.trim());
+        if (values.description?.trim()) form.append("description", values.description.trim());
+
+        const res  = await fetch("/api/submissions", { method: "POST", body: form });
+        const json = await res.json();
+        if (!res.ok) { toast.error(json.error ?? "Erro ao registrar"); return; }
+
+        toast("Registrado. Amanhã é uma nova chance 💪");
+        closeModal();
+        load();
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
+
+    // ── Normal submission path ───────────────────────────────────────────────
     let hasError = false;
 
-    // Photo validation
     if (selected.requires_photo && !values.photo?.[0]) {
       setError("photo", { message: "Selecione uma foto" });
       hasError = true;
@@ -372,23 +347,14 @@ export default function ChallengesPage() {
         hasError = true;
       }
     }
-    // When no photo required, title and description are required
     if (!selected.requires_photo) {
-      if (!values.title?.trim()) {
-        setError("title", { message: "Título é obrigatório para este desafio" });
-        hasError = true;
-      }
-      if (!values.description?.trim()) {
-        setError("description", { message: "Descrição é obrigatória para este desafio" });
-        hasError = true;
-      }
+      if (!values.title?.trim()) { setError("title", { message: "Título é obrigatório para este desafio" }); hasError = true; }
+      if (!values.description?.trim()) { setError("description", { message: "Descrição é obrigatória para este desafio" }); hasError = true; }
     }
-    // Quantity validation
     if (selected.quantity_label && !values.quantity) {
       setError("quantity", { message: `Informe a quantidade de ${selected.quantity_label}` });
       hasError = true;
     }
-
     if (hasError) return;
 
     setUploading(true);
@@ -402,13 +368,11 @@ export default function ChallengesPage() {
       if (values.title?.trim()) form.append("title", values.title.trim());
       if (values.description?.trim()) form.append("description", values.description.trim());
 
-      const res = await fetch("/api/submissions", { method: "POST", body: form });
+      const res  = await fetch("/api/submissions", { method: "POST", body: form });
       const json = await res.json();
 
       if (!res.ok) {
-        const msg = json.error ?? "Erro ao enviar";
-        const detail = json.detail ? ` (${json.detail})` : "";
-        toast.error(msg + detail);
+        toast.error(json.error ?? "Erro ao enviar");
         return;
       }
 
@@ -416,59 +380,27 @@ export default function ChallengesPage() {
         ? `+${estimatedXP} XP (${values.quantity} ${selected.quantity_label})`
         : `+${selected.xp_reward} XP`;
       toast.success(`Check-in registrado! ${xpMsg} ganhos 🎉`);
-      setSelected(null);
-      reset();
-      setPreview(null);
-      setPreview2(null);
-      // Hard navigation to the challenge feed — bypasses Next.js router cache
-      // so the server re-fetches submissions and the new one appears immediately
+      closeModal();
       window.location.href = `/challenges/${challengeId}`;
     } finally {
       setUploading(false);
     }
   }
 
-  async function onFailSubmit(values: FailInput) {
-    if (!selectedFail) return;
+  function openModal(ch: Challenge) {
+    setSelected(ch);
+    setIsFailing(false);
+    reset();
+    setPreview(null);
+    setPreview2(null);
+  }
 
-    let hasError = false;
-    if (values.photo?.[0]) {
-      const f = values.photo[0];
-      if (f.size > 5 * 1024 * 1024) { setErrorFail("photo", { message: "Imagem deve ter no máximo 5 MB" }); hasError = true; }
-      else if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
-        setErrorFail("photo", { message: "Formato inválido. Use JPEG, PNG ou WebP" });
-        hasError = true;
-      }
-    }
-    if (hasError) return;
-
-    setFailUploading(true);
-    const challengeId = selectedFail.id;
-    try {
-      const form = new FormData();
-      form.append("challenge_id", challengeId);
-      form.append("failed", "true");
-      if (values.photo?.[0])         form.append("photo",       values.photo[0]);
-      if (values.title?.trim())       form.append("title",       values.title.trim());
-      if (values.description?.trim()) form.append("description", values.description.trim());
-
-      const res = await fetch("/api/submissions", { method: "POST", body: form });
-      const json = await res.json();
-
-      if (!res.ok) {
-        toast.error(json.error ?? "Erro ao registrar");
-        return;
-      }
-
-      toast("Registrado. Amanhã é uma nova chance 💪");
-      setSelectedFail(null);
-      resetFail();
-      setFailPreview(null);
-      // Refresh challenge list so the card shows "Não completei hoje"
-      load();
-    } finally {
-      setFailUploading(false);
-    }
+  function closeModal() {
+    setSelected(null);
+    setIsFailing(false);
+    reset();
+    setPreview(null);
+    setPreview2(null);
   }
 
   // ── Agenda helpers ────────────────────────────────────────
@@ -486,7 +418,6 @@ export default function ChallengesPage() {
     return d.toISOString().split("T")[0];
   }
 
-  // Initialize agenda to the week of the first scheduled challenge
   useEffect(() => {
     if (scheduled.length > 0 && !agendaDay) {
       const first = scheduled[0].starts_at;
@@ -501,7 +432,6 @@ export default function ChallengesPage() {
     ? Array.from({ length: 7 }, (_, i) => addDays(agendaWeekStart, i))
     : [];
 
-  // Min/max date range across all scheduled challenges
   const agendaMin = scheduled.length > 0
     ? scheduled.reduce((m, c) => c.starts_at < m ? c.starts_at : m, scheduled[0].starts_at)
     : null;
@@ -509,12 +439,8 @@ export default function ChallengesPage() {
     ? scheduled.reduce((m, c) => (c.ends_at ?? "9999-12-31") > m ? (c.ends_at ?? "9999-12-31") : m, "0000-01-01")
     : null;
 
-  const canPrevWeek = agendaWeekStart && agendaMin
-    ? agendaWeekStart > getMonday(agendaMin)
-    : false;
-  const canNextWeek = agendaWeekStart && agendaMax
-    ? addDays(agendaWeekStart, 6) < agendaMax
-    : false;
+  const canPrevWeek = agendaWeekStart && agendaMin ? agendaWeekStart > getMonday(agendaMin) : false;
+  const canNextWeek = agendaWeekStart && agendaMax ? addDays(agendaWeekStart, 6) < agendaMax : false;
 
   const dayHasChallenges = (day: string) =>
     scheduled.some(c => c.starts_at <= day && (c.ends_at == null || c.ends_at >= day));
@@ -535,19 +461,6 @@ export default function ChallengesPage() {
     return `${d}/${m}/${y.slice(2)}`;
   }
 
-  function openModal(ch: Challenge) {
-    setSelected(ch);
-    reset();
-    setPreview(null);
-    setPreview2(null);
-  }
-
-  function openFailModal(ch: Challenge) {
-    setSelectedFail(ch);
-    resetFail();
-    setFailPreview(null);
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -555,7 +468,6 @@ export default function ChallengesPage() {
         <p className="text-muted-foreground mt-1">Complete desafios para ganhar XP e subir de nível.</p>
       </div>
 
-      {/* ── Penalty banner ───────────────────────────────────── */}
       {currentPenalty && (
         <Card className="border-red-500/50 bg-red-500/10">
           <CardContent className="p-4">
@@ -575,14 +487,9 @@ export default function ChallengesPage() {
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : (() => {
-        // Split active challenges into "today" and "yesterday grace period" groups
         const visible = challenges.filter((c) => !dismissedIds.has(c.id));
-        const todayChallenges = visible.filter(
-          (c) => !c.ends_at || c.ends_at > yesterdayStr
-        );
-        const yesterdayChallenges = visible.filter(
-          (c) => c.ends_at && c.ends_at === yesterdayStr
-        );
+        const todayChallenges = visible.filter((c) => !c.ends_at || c.ends_at > yesterdayStr);
+        const yesterdayChallenges = visible.filter((c) => c.ends_at && c.ends_at === yesterdayStr);
 
         if (visible.length === 0) {
           return (
@@ -594,28 +501,17 @@ export default function ChallengesPage() {
 
         return (
           <div className="space-y-6">
-            {/* ── Hoje ──────────────────────────────────────────────── */}
             {todayChallenges.length > 0 && (
               <section className="space-y-3">
-                <h2 className="text-sm font-semibold text-foreground/70 uppercase tracking-wide">
-                  Hoje
-                </h2>
+                <h2 className="text-sm font-semibold text-foreground/70 uppercase tracking-wide">Hoje</h2>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {todayChallenges.map((ch) => (
-                    <ChallengeCardItem
-                      key={ch.id}
-                      ch={ch}
-                      isGrace={false}
-                      onDismiss={dismiss}
-                      onOpen={openModal}
-                      onFail={openFailModal}
-                    />
+                    <ChallengeCardItem key={ch.id} ch={ch} isGrace={false} onDismiss={dismiss} onOpen={openModal} />
                   ))}
                 </div>
               </section>
             )}
 
-            {/* ── Ontem — último dia ────────────────────────────────── */}
             {yesterdayChallenges.length > 0 && (
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
@@ -631,14 +527,7 @@ export default function ChallengesPage() {
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {yesterdayChallenges.map((ch) => (
-                    <ChallengeCardItem
-                      key={ch.id}
-                      ch={ch}
-                      isGrace
-                      onDismiss={dismiss}
-                      onOpen={openModal}
-                      onFail={openFailModal}
-                    />
+                    <ChallengeCardItem key={ch.id} ch={ch} isGrace onDismiss={dismiss} onOpen={openModal} />
                   ))}
                 </div>
               </section>
@@ -647,19 +536,16 @@ export default function ChallengesPage() {
         );
       })()}
 
-      {/* ── Agenda (calendar) ────────────────────────────────── */}
+      {/* ── Agenda ───────────────────────────────────────────── */}
       {!loading && scheduled.length > 0 && agendaWeekStart && (
         <section className="space-y-4">
-          {/* Header */}
           <div className="flex items-center gap-2">
             <CalendarClock className="h-5 w-5 text-violet-400" />
             <h2 className="text-lg font-semibold">Agenda</h2>
           </div>
 
-          {/* Week strip */}
           <div className="rounded-xl border border-border bg-card p-3">
             <div className="flex items-center gap-1">
-              {/* Prev week */}
               <button
                 onClick={() => {
                   const prev = addDays(agendaWeekStart, -7);
@@ -672,7 +558,6 @@ export default function ChallengesPage() {
                 <ChevronLeft className="h-4 w-4" />
               </button>
 
-              {/* Days */}
               <div className="flex flex-1 gap-1">
                 {weekDays.map((day, i) => {
                   const hasChall = dayHasChallenges(day);
@@ -694,15 +579,12 @@ export default function ChallengesPage() {
                     >
                       <span className="font-medium text-[10px] uppercase tracking-wide">{DAY_NAMES[i]}</span>
                       <span className="text-base font-bold leading-none">{dayNum}</span>
-                      {hasChall && !isSel && (
-                        <span className="mt-0.5 h-1 w-1 rounded-full bg-violet-400" />
-                      )}
+                      {hasChall && !isSel && <span className="mt-0.5 h-1 w-1 rounded-full bg-violet-400" />}
                     </button>
                   );
                 })}
               </div>
 
-              {/* Next week */}
               <button
                 onClick={() => {
                   const next = addDays(agendaWeekStart, 7);
@@ -716,7 +598,6 @@ export default function ChallengesPage() {
               </button>
             </div>
 
-            {/* Month label */}
             {agendaDay && (
               <p className="mt-2 text-center text-xs text-muted-foreground capitalize">
                 {new Date(agendaDay + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
@@ -726,7 +607,6 @@ export default function ChallengesPage() {
             )}
           </div>
 
-          {/* Challenges for selected day */}
           {selectedDayChallenges.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {selectedDayChallenges.map((ch) => (
@@ -772,33 +652,48 @@ export default function ChallengesPage() {
       )}
 
       {/* ── Submission modal ──────────────────────────────────── */}
-      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+      <Dialog open={!!selected} onOpenChange={(o) => !o && closeModal()}>
         <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Enviar evidência</DialogTitle>
-            <DialogDescription>{selected?.title}</DialogDescription>
+            {isFailing ? (
+              <>
+                <DialogTitle className="flex items-center gap-2">
+                  <XCircle className="h-5 w-5 text-rose-400 shrink-0" />
+                  Não completei
+                </DialogTitle>
+                <DialogDescription>{selected?.title}</DialogDescription>
+              </>
+            ) : (
+              <>
+                <DialogTitle>Enviar evidência</DialogTitle>
+                <DialogDescription>{selected?.title}</DialogDescription>
+              </>
+            )}
           </DialogHeader>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Photo upload — shown if requires_photo */}
-            {selected?.requires_photo ? (
+            {isFailing ? (
+              /* ── Failed mode: all fields optional ── */
               <>
-                {/* ── Primary photo (required) ── */}
+                <p className="text-sm text-muted-foreground">
+                  Registre que você não completou. Foto e comentário são opcionais.
+                </p>
+
+                {/* Optional evidence photo */}
                 <div className="space-y-1.5">
                   <Label className="text-xs">
-                    Foto <span className="text-destructive">*</span>
+                    Foto <span className="text-muted-foreground font-normal">(opcional)</span>
                   </Label>
                   <div
-                    className="relative flex h-48 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-violet-500/50 transition-colors overflow-hidden"
+                    className="relative flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-rose-500/30 transition-colors overflow-hidden"
                     onClick={() => fileInputRef.current?.click()}
                   >
                     {preview ? (
                       <Image src={preview} alt="Preview" fill className="object-cover" />
                     ) : (
                       <>
-                        <ImageIcon className="h-10 w-10 text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground">Clique para selecionar</p>
-                        <p className="text-xs text-muted-foreground">JPEG, PNG, WebP · máx 5 MB</p>
+                        <ImageIcon className="h-7 w-7 text-muted-foreground/60 mb-1.5" />
+                        <p className="text-xs text-muted-foreground">Clique para adicionar</p>
                       </>
                     )}
                   </div>
@@ -817,246 +712,225 @@ export default function ChallengesPage() {
                   )}
                 </div>
 
-                {/* ── Secondary photo (optional) ── */}
+                {/* Optional title */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs">
-                    2ª foto{" "}
-                    <span className="text-muted-foreground font-normal">(opcional)</span>
+                  <Label htmlFor="fail-title" className="text-xs">
+                    Título <span className="text-muted-foreground font-normal">(opcional · {(titleValue ?? "").length}/120)</span>
                   </Label>
-                  <div
-                    className="relative flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-violet-500/50 transition-colors overflow-hidden"
-                    onClick={() => fileInputRef2.current?.click()}
-                  >
-                    {preview2 ? (
-                      <Image src={preview2} alt="Preview 2ª foto" fill className="object-cover" />
-                    ) : (
-                      <>
-                        <ImageIcon className="h-7 w-7 text-muted-foreground/60 mb-1.5" />
-                        <p className="text-xs text-muted-foreground">Clique para adicionar</p>
-                      </>
-                    )}
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    {...register("photo2")}
-                    ref={(el) => {
-                      register("photo2").ref(el);
-                      (fileInputRef2 as React.MutableRefObject<HTMLInputElement | null>).current = el;
-                    }}
+                  <Input
+                    id="fail-title"
+                    placeholder="Ex: Estava viajando"
+                    maxLength={120}
+                    {...register("title")}
                   />
-                  {errors.photo2 && (
-                    <p className="text-xs text-destructive">{errors.photo2.message as string}</p>
+                  {errors.title && (
+                    <p className="text-xs text-destructive">{errors.title.message as string}</p>
                   )}
+                </div>
+
+                {/* Optional description */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="fail-description" className="text-xs">
+                    Comentário <span className="text-muted-foreground font-normal">(opcional · {(descriptionValue ?? "").length}/500)</span>
+                  </Label>
+                  <Textarea
+                    id="fail-description"
+                    placeholder="O que aconteceu?"
+                    maxLength={500}
+                    rows={3}
+                    {...register("description")}
+                  />
+                  {errors.description && (
+                    <p className="text-xs text-destructive">{errors.description.message as string}</p>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => { setIsFailing(false); reset(); setPreview(null); }}
+                  >
+                    ← Voltar
+                  </Button>
+                  <Button type="submit" variant="destructive" className="flex-1" disabled={uploading}>
+                    {uploading
+                      ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      : <XCircle className="mr-2 h-4 w-4" />}
+                    Confirmar
+                  </Button>
                 </div>
               </>
             ) : (
-              <div className="flex items-center gap-3 rounded-lg border border-dashed border-sky-500/30 bg-sky-500/5 px-4 py-3">
-                <CameraOff className="h-5 w-5 text-sky-400 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-sky-400">Sem foto necessária</p>
-                  <p className="text-xs text-muted-foreground">Descreva sua conquista abaixo</p>
-                </div>
-              </div>
-            )}
-
-            {/* Title */}
-            <div className="space-y-1.5">
-              <Label htmlFor="sub-title">
-                Título
-                {!selected?.requires_photo && <span className="text-destructive ml-0.5">*</span>}
-                <span className="text-muted-foreground font-normal ml-1 text-xs">
-                  ({(titleValue ?? "").length}/120)
-                </span>
-              </Label>
-              <Input
-                id="sub-title"
-                placeholder="Ex: Treino matinal de hoje"
-                maxLength={120}
-                {...register("title")}
-              />
-              {errors.title && (
-                <p className="text-xs text-destructive">{errors.title.message as string}</p>
-              )}
-            </div>
-
-            {/* Description */}
-            <div className="space-y-1.5">
-              <Label htmlFor="sub-description">
-                Descrição
-                {!selected?.requires_photo && <span className="text-destructive ml-0.5">*</span>}
-                <span className="text-muted-foreground font-normal ml-1 text-xs">
-                  ({(descriptionValue ?? "").length}/500)
-                </span>
-              </Label>
-              <Textarea
-                id="sub-description"
-                placeholder="Descreva o que você fez..."
-                maxLength={500}
-                rows={3}
-                {...register("description")}
-              />
-              {errors.description && (
-                <p className="text-xs text-destructive">{errors.description.message as string}</p>
-              )}
-            </div>
-
-            {/* Quantity input — shown for quantifiable challenges */}
-            {selected?.quantity_label && (
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5">
-                  <Hash className="h-4 w-4 text-violet-400" />
-                  Quantidade de {selected.quantity_label}
-                  {selected.max_quantity && (
-                    <span className="text-xs text-muted-foreground font-normal">(máx {selected.max_quantity})</span>
-                  )}
-                </Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={selected.max_quantity ?? undefined}
-                  placeholder={`Quantas ${selected.quantity_label}?`}
-                  {...register("quantity", { valueAsNumber: true })}
-                />
-                {errors.quantity && (
-                  <p className="text-xs text-destructive">{errors.quantity.message as string}</p>
-                )}
-                {/* XP estimate */}
-                {selected.xp_per_unit && (
-                  <p className="text-xs text-muted-foreground">
-                    {estimatedXP !== null
-                      ? <span className="text-emerald-400 font-medium">+{estimatedXP} XP</span>
-                      : `${selected.xp_per_unit} XP por ${selected.quantity_label.replace(/s$/, "")} · máx ${selected.xp_reward} XP`}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setSelected(null)}>
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                className="flex-1"
-                disabled={uploading || (selected?.requires_photo && !preview)}
-              >
-                {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                Enviar
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── "Não completei" modal ────────────────────────────── */}
-      <Dialog open={!!selectedFail} onOpenChange={(o) => { if (!o) { setSelectedFail(null); resetFail(); setFailPreview(null); } }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-rose-400 shrink-0" />
-              Não completei
-            </DialogTitle>
-            <DialogDescription>{selectedFail?.title}</DialogDescription>
-          </DialogHeader>
-
-          <p className="text-sm text-muted-foreground -mt-1">
-            Registre que você não completou o desafio hoje.
-            Você pode adicionar uma evidência ou comentário opcional.
-          </p>
-
-          <form onSubmit={handleSubmitFail(onFailSubmit)} className="space-y-4">
-            {/* Optional photo evidence */}
-            <div className="space-y-1.5">
-              <Label className="text-xs">
-                Foto{" "}
-                <span className="text-muted-foreground font-normal">(opcional)</span>
-              </Label>
-              <div
-                className="relative flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-rose-500/30 transition-colors overflow-hidden"
-                onClick={() => failFileInputRef.current?.click()}
-              >
-                {failPreview ? (
-                  <Image src={failPreview} alt="Preview" fill className="object-cover" />
-                ) : (
+              /* ── Normal submission mode ── */
+              <>
+                {selected?.requires_photo ? (
                   <>
-                    <ImageIcon className="h-7 w-7 text-muted-foreground/60 mb-1.5" />
-                    <p className="text-xs text-muted-foreground">Clique para adicionar</p>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">
+                        Foto <span className="text-destructive">*</span>
+                      </Label>
+                      <div
+                        className="relative flex h-48 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-violet-500/50 transition-colors overflow-hidden"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {preview ? (
+                          <Image src={preview} alt="Preview" fill className="object-cover" />
+                        ) : (
+                          <>
+                            <ImageIcon className="h-10 w-10 text-muted-foreground mb-2" />
+                            <p className="text-sm text-muted-foreground">Clique para selecionar</p>
+                            <p className="text-xs text-muted-foreground">JPEG, PNG, WebP · máx 5 MB</p>
+                          </>
+                        )}
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        {...register("photo")}
+                        ref={(el) => {
+                          register("photo").ref(el);
+                          (fileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+                        }}
+                      />
+                      {errors.photo && (
+                        <p className="text-xs text-destructive">{errors.photo.message as string}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">
+                        2ª foto <span className="text-muted-foreground font-normal">(opcional)</span>
+                      </Label>
+                      <div
+                        className="relative flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-violet-500/50 transition-colors overflow-hidden"
+                        onClick={() => fileInputRef2.current?.click()}
+                      >
+                        {preview2 ? (
+                          <Image src={preview2} alt="Preview 2ª foto" fill className="object-cover" />
+                        ) : (
+                          <>
+                            <ImageIcon className="h-7 w-7 text-muted-foreground/60 mb-1.5" />
+                            <p className="text-xs text-muted-foreground">Clique para adicionar</p>
+                          </>
+                        )}
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        {...register("photo2")}
+                        ref={(el) => {
+                          register("photo2").ref(el);
+                          (fileInputRef2 as React.MutableRefObject<HTMLInputElement | null>).current = el;
+                        }}
+                      />
+                      {errors.photo2 && (
+                        <p className="text-xs text-destructive">{errors.photo2.message as string}</p>
+                      )}
+                    </div>
                   </>
+                ) : (
+                  <div className="flex items-center gap-3 rounded-lg border border-dashed border-sky-500/30 bg-sky-500/5 px-4 py-3">
+                    <CameraOff className="h-5 w-5 text-sky-400 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-sky-400">Sem foto necessária</p>
+                      <p className="text-xs text-muted-foreground">Descreva sua conquista abaixo</p>
+                    </div>
+                  </div>
                 )}
-              </div>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                {...registerFail("photo")}
-                ref={(el) => {
-                  registerFail("photo").ref(el);
-                  (failFileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
-                }}
-              />
-              {errorsFail.photo && (
-                <p className="text-xs text-destructive">{errorsFail.photo.message as string}</p>
-              )}
-            </div>
 
-            {/* Optional title */}
-            <div className="space-y-1.5">
-              <Label htmlFor="fail-title" className="text-xs">
-                Título{" "}
-                <span className="text-muted-foreground font-normal">(opcional · {(failTitleValue ?? "").length}/120)</span>
-              </Label>
-              <Input
-                id="fail-title"
-                placeholder="Ex: Estava viajando"
-                maxLength={120}
-                {...registerFail("title")}
-              />
-              {errorsFail.title && (
-                <p className="text-xs text-destructive">{errorsFail.title.message as string}</p>
-              )}
-            </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="sub-title">
+                    Título
+                    {!selected?.requires_photo && <span className="text-destructive ml-0.5">*</span>}
+                    <span className="text-muted-foreground font-normal ml-1 text-xs">({(titleValue ?? "").length}/120)</span>
+                  </Label>
+                  <Input
+                    id="sub-title"
+                    placeholder="Ex: Treino matinal de hoje"
+                    maxLength={120}
+                    {...register("title")}
+                  />
+                  {errors.title && (
+                    <p className="text-xs text-destructive">{errors.title.message as string}</p>
+                  )}
+                </div>
 
-            {/* Optional description */}
-            <div className="space-y-1.5">
-              <Label htmlFor="fail-description" className="text-xs">
-                Comentário{" "}
-                <span className="text-muted-foreground font-normal">(opcional · {(failDescriptionValue ?? "").length}/500)</span>
-              </Label>
-              <Textarea
-                id="fail-description"
-                placeholder="O que aconteceu?"
-                maxLength={500}
-                rows={3}
-                {...registerFail("description")}
-              />
-              {errorsFail.description && (
-                <p className="text-xs text-destructive">{errorsFail.description.message as string}</p>
-              )}
-            </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="sub-description">
+                    Descrição
+                    {!selected?.requires_photo && <span className="text-destructive ml-0.5">*</span>}
+                    <span className="text-muted-foreground font-normal ml-1 text-xs">({(descriptionValue ?? "").length}/500)</span>
+                  </Label>
+                  <Textarea
+                    id="sub-description"
+                    placeholder="Descreva o que você fez..."
+                    maxLength={500}
+                    rows={3}
+                    {...register("description")}
+                  />
+                  {errors.description && (
+                    <p className="text-xs text-destructive">{errors.description.message as string}</p>
+                  )}
+                </div>
 
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => { setSelectedFail(null); resetFail(); setFailPreview(null); }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                variant="destructive"
-                className="flex-1"
-                disabled={failUploading}
-              >
-                {failUploading
-                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  : <XCircle className="mr-2 h-4 w-4" />}
-                Confirmar
-              </Button>
-            </div>
+                {selected?.quantity_label && (
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center gap-1.5">
+                      <Hash className="h-4 w-4 text-violet-400" />
+                      Quantidade de {selected.quantity_label}
+                      {selected.max_quantity && (
+                        <span className="text-xs text-muted-foreground font-normal">(máx {selected.max_quantity})</span>
+                      )}
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={selected.max_quantity ?? undefined}
+                      placeholder={`Quantas ${selected.quantity_label}?`}
+                      {...register("quantity", { valueAsNumber: true })}
+                    />
+                    {errors.quantity && (
+                      <p className="text-xs text-destructive">{errors.quantity.message as string}</p>
+                    )}
+                    {selected.xp_per_unit && (
+                      <p className="text-xs text-muted-foreground">
+                        {estimatedXP !== null
+                          ? <span className="text-emerald-400 font-medium">+{estimatedXP} XP</span>
+                          : `${selected.xp_per_unit} XP por ${selected.quantity_label.replace(/s$/, "")} · máx ${selected.xp_reward} XP`}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" className="flex-1" onClick={closeModal}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="flex-1"
+                    disabled={uploading || (selected?.requires_photo && !preview)}
+                  >
+                    {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                    Enviar
+                  </Button>
+                </div>
+
+                {/* ── Toggle to "Não completei" mode ── */}
+                <button
+                  type="button"
+                  onClick={() => { setIsFailing(true); reset(); setPreview(null); setPreview2(null); }}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-rose-400 transition-colors pt-1 pb-0.5"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                  Não completei o desafio hoje
+                </button>
+              </>
+            )}
           </form>
         </DialogContent>
       </Dialog>
