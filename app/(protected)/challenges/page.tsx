@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame, CalendarClock, Lock, ChevronLeft, ChevronRight, Eye, X } from "lucide-react";
+import { Loader2, Upload, ImageIcon, ArrowRight, Hash, CameraOff, RotateCcw, CheckCircle2, Gavel, Flame, CalendarClock, Lock, ChevronLeft, ChevronRight, Eye, X, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ScheduledChallenge {
@@ -48,6 +48,7 @@ interface Challenge {
   // For daily: submitted today or yesterday (grace period). For weekly: how many times this week.
   submittedToday:     boolean;
   submittedYesterday: boolean;
+  failedToday:        boolean;
   weeklyCount: number;
 }
 
@@ -63,7 +64,14 @@ const uploadSchema = z.object({
   description: z.string().max(500, "Máximo 500 caracteres").optional(),
 });
 
+const failSchema = z.object({
+  photo: z.custom<FileList>(fileListValidator, "Selecione uma imagem").optional(),
+  title: z.string().max(120, "Máximo 120 caracteres").optional(),
+  description: z.string().max(500, "Máximo 500 caracteres").optional(),
+});
+
 type UploadInput = z.infer<typeof uploadSchema>;
+type FailInput  = z.infer<typeof failSchema>;
 
 // ── Challenge card (top-level to avoid remount on every render) ──────────────
 
@@ -72,9 +80,10 @@ interface ChallengeCardItemProps {
   isGrace: boolean;
   onDismiss: (id: string) => void;
   onOpen: (ch: Challenge) => void;
+  onFail: (ch: Challenge) => void;
 }
 
-function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen }: ChallengeCardItemProps) {
+function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen, onFail }: ChallengeCardItemProps) {
   const isWeekly = ch.frequency === "weekly";
   const weeklyDone = isWeekly && ch.weeklyCount >= ch.weekly_target;
   // Grace-period cards count a submission from yesterday OR today as "done"
@@ -95,7 +104,7 @@ function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen }: ChallengeCardItem
       )}
     >
       {/* Dismiss button — top-right corner, only for incomplete challenges */}
-      {!isDone && (
+      {!isDone && !ch.failedToday && (
         <button
           onClick={() => onDismiss(ch.id)}
           title="Dispensar desafio"
@@ -154,10 +163,32 @@ function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen }: ChallengeCardItem
               <Eye className="h-3.5 w-3.5" /> Ver
             </Link>
           </>
+        ) : ch.failedToday ? (
+          <>
+            <Badge variant="secondary" className="text-xs gap-1 flex-1 justify-center py-1.5 text-rose-400">
+              <XCircle className="h-3 w-3 text-rose-400" />
+              Não completei hoje
+            </Badge>
+            <Link
+              href={`/challenges/${ch.id}`}
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5 shrink-0")}
+            >
+              <Eye className="h-3.5 w-3.5" /> Ver
+            </Link>
+          </>
         ) : (
           <>
             <Button size="sm" className="flex-1" onClick={() => onOpen(ch)}>
               <Upload className="mr-1.5 h-3.5 w-3.5" /> Enviar
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0 text-muted-foreground hover:text-rose-400"
+              title="Não completei"
+              onClick={() => onFail(ch)}
+            >
+              <XCircle className="h-4 w-4" />
             </Button>
             <Link href={`/challenges/${ch.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
               <ArrowRight className="h-4 w-4" />
@@ -178,14 +209,18 @@ export default function ChallengesPage() {
   const [currentPenalty, setCurrentPenalty] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Challenge | null>(null);
+  const [selectedFail, setSelectedFail] = useState<Challenge | null>(null);
   const [yesterdayStr, setYesterdayStr] = useState<string>("");
   // Challenges dismissed locally (persisted to DB async — instant UI feedback)
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
+  const [failUploading, setFailUploading] = useState(false);
   const [preview,  setPreview]  = useState<string | null>(null);
   const [preview2, setPreview2] = useState<string | null>(null);
+  const [failPreview, setFailPreview] = useState<string | null>(null);
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
+  const failFileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Agenda calendar state ─────────────────────────────────
   const [agendaDay, setAgendaDay] = useState<string | null>(null);
@@ -200,11 +235,24 @@ export default function ChallengesPage() {
     formState: { errors },
   } = useForm<UploadInput>({ resolver: zodResolver(uploadSchema) });
 
+  const {
+    register: registerFail,
+    handleSubmit: handleSubmitFail,
+    reset: resetFail,
+    watch: watchFail,
+    setError: setErrorFail,
+    formState: { errors: errorsFail },
+  } = useForm<FailInput>({ resolver: zodResolver(failSchema) });
+
   const photoFile  = watch("photo");
   const photoFile2 = watch("photo2");
   const quantityValue = watch("quantity");
   const titleValue = watch("title");
   const descriptionValue = watch("description");
+
+  const failPhotoFile = watchFail("photo");
+  const failTitleValue = watchFail("title");
+  const failDescriptionValue = watchFail("description");
 
   useEffect(() => {
     if (photoFile?.[0]) {
@@ -224,6 +272,15 @@ export default function ChallengesPage() {
     setPreview2(null);
   }, [photoFile2]);
 
+  useEffect(() => {
+    if (failPhotoFile?.[0]) {
+      const url = URL.createObjectURL(failPhotoFile[0]);
+      setFailPreview(url);
+      return () => URL.revokeObjectURL(url);
+    }
+    setFailPreview(null);
+  }, [failPhotoFile]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -238,11 +295,16 @@ export default function ChallengesPage() {
       setScheduled(sched ?? []);
       setYesterdayStr(yd ?? "");
 
-      const weekSubs = (subData as { challenge_id: string; submitted_date: string }[]) ?? [];
-      const todaySet     = new Set(weekSubs.filter((s) => s.submitted_date === todayStr).map((s) => s.challenge_id));
-      const yesterdaySet = new Set(weekSubs.filter((s) => s.submitted_date === (yd ?? "")).map((s) => s.challenge_id));
+      const weekSubs = (subData as { challenge_id: string; submitted_date: string; status: string }[]) ?? [];
+      // Only successful (approved/pending) submissions count as "done"
+      const successSubs    = weekSubs.filter((s) => s.status !== "failed");
+      const todaySet       = new Set(successSubs.filter((s) => s.submitted_date === todayStr).map((s) => s.challenge_id));
+      const yesterdaySet   = new Set(successSubs.filter((s) => s.submitted_date === (yd ?? "")).map((s) => s.challenge_id));
+      // Failed submissions today
+      const failedTodaySet = new Set(weekSubs.filter((s) => s.status === "failed" && s.submitted_date === todayStr).map((s) => s.challenge_id));
+      // Weekly count excludes failed submissions
       const weeklyCountMap: Record<string, number> = {};
-      for (const s of weekSubs) {
+      for (const s of successSubs) {
         weeklyCountMap[s.challenge_id] = (weeklyCountMap[s.challenge_id] ?? 0) + 1;
       }
 
@@ -252,6 +314,7 @@ export default function ChallengesPage() {
           ...c,
           submittedToday:     todaySet.has(c.id),
           submittedYesterday: yesterdaySet.has(c.id),
+          failedToday:        failedTodaySet.has(c.id),
           weeklyCount: weeklyCountMap[c.id] ?? 0,
         }))
       );
@@ -365,6 +428,49 @@ export default function ChallengesPage() {
     }
   }
 
+  async function onFailSubmit(values: FailInput) {
+    if (!selectedFail) return;
+
+    let hasError = false;
+    if (values.photo?.[0]) {
+      const f = values.photo[0];
+      if (f.size > 5 * 1024 * 1024) { setErrorFail("photo", { message: "Imagem deve ter no máximo 5 MB" }); hasError = true; }
+      else if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
+        setErrorFail("photo", { message: "Formato inválido. Use JPEG, PNG ou WebP" });
+        hasError = true;
+      }
+    }
+    if (hasError) return;
+
+    setFailUploading(true);
+    const challengeId = selectedFail.id;
+    try {
+      const form = new FormData();
+      form.append("challenge_id", challengeId);
+      form.append("failed", "true");
+      if (values.photo?.[0])         form.append("photo",       values.photo[0]);
+      if (values.title?.trim())       form.append("title",       values.title.trim());
+      if (values.description?.trim()) form.append("description", values.description.trim());
+
+      const res = await fetch("/api/submissions", { method: "POST", body: form });
+      const json = await res.json();
+
+      if (!res.ok) {
+        toast.error(json.error ?? "Erro ao registrar");
+        return;
+      }
+
+      toast("Registrado. Amanhã é uma nova chance 💪");
+      setSelectedFail(null);
+      resetFail();
+      setFailPreview(null);
+      // Refresh challenge list so the card shows "Não completei hoje"
+      load();
+    } finally {
+      setFailUploading(false);
+    }
+  }
+
   // ── Agenda helpers ────────────────────────────────────────
   function addDays(dateStr: string, n: number): string {
     const d = new Date(dateStr + "T12:00:00");
@@ -436,6 +542,12 @@ export default function ChallengesPage() {
     setPreview2(null);
   }
 
+  function openFailModal(ch: Challenge) {
+    setSelectedFail(ch);
+    resetFail();
+    setFailPreview(null);
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -496,6 +608,7 @@ export default function ChallengesPage() {
                       isGrace={false}
                       onDismiss={dismiss}
                       onOpen={openModal}
+                      onFail={openFailModal}
                     />
                   ))}
                 </div>
@@ -524,6 +637,7 @@ export default function ChallengesPage() {
                       isGrace
                       onDismiss={dismiss}
                       onOpen={openModal}
+                      onFail={openFailModal}
                     />
                   ))}
                 </div>
@@ -830,6 +944,117 @@ export default function ChallengesPage() {
               >
                 {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                 Enviar
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── "Não completei" modal ────────────────────────────── */}
+      <Dialog open={!!selectedFail} onOpenChange={(o) => { if (!o) { setSelectedFail(null); resetFail(); setFailPreview(null); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-rose-400 shrink-0" />
+              Não completei
+            </DialogTitle>
+            <DialogDescription>{selectedFail?.title}</DialogDescription>
+          </DialogHeader>
+
+          <p className="text-sm text-muted-foreground -mt-1">
+            Registre que você não completou o desafio hoje.
+            Você pode adicionar uma evidência ou comentário opcional.
+          </p>
+
+          <form onSubmit={handleSubmitFail(onFailSubmit)} className="space-y-4">
+            {/* Optional photo evidence */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                Foto{" "}
+                <span className="text-muted-foreground font-normal">(opcional)</span>
+              </Label>
+              <div
+                className="relative flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-rose-500/30 transition-colors overflow-hidden"
+                onClick={() => failFileInputRef.current?.click()}
+              >
+                {failPreview ? (
+                  <Image src={failPreview} alt="Preview" fill className="object-cover" />
+                ) : (
+                  <>
+                    <ImageIcon className="h-7 w-7 text-muted-foreground/60 mb-1.5" />
+                    <p className="text-xs text-muted-foreground">Clique para adicionar</p>
+                  </>
+                )}
+              </div>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                {...registerFail("photo")}
+                ref={(el) => {
+                  registerFail("photo").ref(el);
+                  (failFileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+                }}
+              />
+              {errorsFail.photo && (
+                <p className="text-xs text-destructive">{errorsFail.photo.message as string}</p>
+              )}
+            </div>
+
+            {/* Optional title */}
+            <div className="space-y-1.5">
+              <Label htmlFor="fail-title" className="text-xs">
+                Título{" "}
+                <span className="text-muted-foreground font-normal">(opcional · {(failTitleValue ?? "").length}/120)</span>
+              </Label>
+              <Input
+                id="fail-title"
+                placeholder="Ex: Estava viajando"
+                maxLength={120}
+                {...registerFail("title")}
+              />
+              {errorsFail.title && (
+                <p className="text-xs text-destructive">{errorsFail.title.message as string}</p>
+              )}
+            </div>
+
+            {/* Optional description */}
+            <div className="space-y-1.5">
+              <Label htmlFor="fail-description" className="text-xs">
+                Comentário{" "}
+                <span className="text-muted-foreground font-normal">(opcional · {(failDescriptionValue ?? "").length}/500)</span>
+              </Label>
+              <Textarea
+                id="fail-description"
+                placeholder="O que aconteceu?"
+                maxLength={500}
+                rows={3}
+                {...registerFail("description")}
+              />
+              {errorsFail.description && (
+                <p className="text-xs text-destructive">{errorsFail.description.message as string}</p>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => { setSelectedFail(null); resetFail(); setFailPreview(null); }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                variant="destructive"
+                className="flex-1"
+                disabled={failUploading}
+              >
+                {failUploading
+                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  : <XCircle className="mr-2 h-4 w-4" />}
+                Confirmar
               </Button>
             </div>
           </form>

@@ -4,7 +4,7 @@
 export type UserRole = "user" | "admin";
 export type UserStatus = "pending" | "active" | "suspended";
 export type ChallengeFrequency = "daily" | "weekly" | "streak";
-export type SubmissionStatus = "pending" | "approved" | "contested" | "rejected";
+export type SubmissionStatus = "pending" | "approved" | "contested" | "rejected" | "failed";
 export type ReactionType = "positive" | "negative";
 
 export interface Database {

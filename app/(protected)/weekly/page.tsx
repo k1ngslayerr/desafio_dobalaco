@@ -147,7 +147,8 @@ function computeGroupCell(
   if (group.frequency === "weekly") {
     const ids = new Set(group.challenges.map((c) => c.id));
     const target = group.weekly_target;
-    const count = submissions.filter((s) => s.user_id === userId && ids.has(s.challenge_id)).length;
+    // Exclude failed submissions — they don't count toward the weekly target
+    const count = submissions.filter((s) => s.user_id === userId && ids.has(s.challenge_id) && s.status !== "failed").length;
     return { count, target, isComplete: target === 0 || count >= target, isOnTrack: target === 0 || count >= Math.ceil(target / 2) };
   }
 
@@ -257,6 +258,7 @@ function ExpandedGroupCell({
   if (sub?.status === "approved")  return <CheckCircle2 className="h-4 w-4 text-emerald-400 mx-auto" />;
   if (sub?.status === "contested") return <AlertOctagon className="h-4 w-4 text-orange-400 mx-auto" />;
   if (sub?.status === "pending")   return <CheckCircle2 className="h-4 w-4 text-amber-400/70 mx-auto" />;
+  if (sub?.status === "failed")    return <XCircle      className="h-4 w-4 text-rose-500 mx-auto" />;
   if (isExcused)                   return <FileCheck    className="h-4 w-4 text-sky-400 mx-auto" />;
   return                                  <XCircle      className="h-3.5 w-3.5 text-red-400/60 mx-auto" />;
 }

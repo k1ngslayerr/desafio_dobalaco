@@ -15,6 +15,9 @@ const createSchema = z.object({
 });
 
 // POST /api/submissions – create a new submission (photo optional per challenge config)
+// When the formData field `failed` is "true", the submission is recorded as a
+// self-reported failure: no XP is awarded, photo/title/description are all optional,
+// and the status is set to "failed" without going through the approval flow.
 export async function POST(request: Request) {
   const supabase = await createClient();
 
@@ -41,6 +44,10 @@ export async function POST(request: Request) {
   const quantityRaw = formData.get("quantity");
   const titleRaw = (formData.get("title") as string | null)?.trim() || null;
   const descriptionRaw = (formData.get("description") as string | null)?.trim() || null;
+  // [SECURITY] The `failed` field is read from trusted formData sent from the
+  // authenticated user's own session. It only changes the submission's status and
+  // relaxes photo/text requirements — it cannot elevate privileges or award XP.
+  const isFailed = formData.get("failed") === "true";
 
   // [SECURITY] Validate challenge_id and optional fields
   const parsed = createSchema.safeParse({
@@ -81,30 +88,35 @@ export async function POST(request: Request) {
     }
   }
 
-  // Validate photo requirement
-  // [SECURITY] size > 0 is essential — an empty File instance would otherwise
-  // bypass this check and end up creating a submission with photo_url=null
-  // even when the challenge requires a photo.
-  if (challenge.requires_photo && (!file || !(file instanceof File) || file.size === 0)) {
-    return NextResponse.json({ error: "Foto é obrigatória para este desafio" }, { status: 400 });
-  }
-
-  // When photo is not required, title and description are mandatory
-  if (!challenge.requires_photo) {
-    if (!titleRaw) {
-      return NextResponse.json({ error: "Título é obrigatório para este desafio" }, { status: 400 });
+  // For regular (non-failed) submissions, enforce challenge requirements.
+  // Failed submissions bypass photo and text requirements — the user is simply
+  // acknowledging they didn't complete the challenge; evidence is optional.
+  if (!isFailed) {
+    // Validate photo requirement
+    // [SECURITY] size > 0 is essential — an empty File instance would otherwise
+    // bypass this check and end up creating a submission with photo_url=null
+    // even when the challenge requires a photo.
+    if (challenge.requires_photo && (!file || !(file instanceof File) || file.size === 0)) {
+      return NextResponse.json({ error: "Foto é obrigatória para este desafio" }, { status: 400 });
     }
-    if (!descriptionRaw) {
-      return NextResponse.json({ error: "Descrição é obrigatória para este desafio" }, { status: 400 });
-    }
-  }
 
-  // Validate quantity requirement
-  if (challenge.quantity_label && !parsed.data.quantity) {
-    return NextResponse.json({ error: `Informe a quantidade de ${challenge.quantity_label}` }, { status: 400 });
-  }
-  if (parsed.data.quantity && challenge.max_quantity && parsed.data.quantity > challenge.max_quantity) {
-    return NextResponse.json({ error: `Quantidade máxima é ${challenge.max_quantity}` }, { status: 400 });
+    // When photo is not required, title and description are mandatory
+    if (!challenge.requires_photo) {
+      if (!titleRaw) {
+        return NextResponse.json({ error: "Título é obrigatório para este desafio" }, { status: 400 });
+      }
+      if (!descriptionRaw) {
+        return NextResponse.json({ error: "Descrição é obrigatória para este desafio" }, { status: 400 });
+      }
+    }
+
+    // Validate quantity requirement
+    if (challenge.quantity_label && !parsed.data.quantity) {
+      return NextResponse.json({ error: `Informe a quantidade de ${challenge.quantity_label}` }, { status: 400 });
+    }
+    if (parsed.data.quantity && challenge.max_quantity && parsed.data.quantity > challenge.max_quantity) {
+      return NextResponse.json({ error: `Quantidade máxima é ${challenge.max_quantity}` }, { status: 400 });
+    }
   }
 
   // Check for existing submission today (DB unique constraint on challenge_id+user_id+submitted_date)
@@ -163,6 +175,38 @@ export async function POST(request: Request) {
     }
     storagePath2 = result.path;
   }
+
+  if (isFailed) {
+    // ── Failed submission path ──────────────────────────────────────────────
+    // No XP, no approval flow — insert directly with status "failed".
+    const insertPayload: Record<string, unknown> = {
+      challenge_id: challenge.id,
+      user_id: user.id,
+      photo_url:   storagePath,
+      photo_url_2: storagePath2,
+      submitted_date: todayStr,
+      title: titleRaw,
+      description: descriptionRaw,
+      status: "failed",
+    };
+
+    const { data: submission, error: insertError } = await adminUpload
+      .from("submissions")
+      .insert(insertPayload)
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error("[submissions] failed insert error:", insertError.message);
+      const toRemove = [storagePath, storagePath2].filter(Boolean) as string[];
+      if (toRemove.length) await adminUpload.storage.from("submissions").remove(toRemove).catch(() => {});
+      return NextResponse.json({ error: "Erro ao salvar submission" }, { status: 500 });
+    }
+
+    return NextResponse.json({ submission }, { status: 201 });
+  }
+
+  // ── Regular submission path ─────────────────────────────────────────────────
 
   // Calculate XP for quantifiable challenges
   // If xp_per_unit is set, XP = min(quantity * xp_per_unit, xp_reward)

@@ -36,7 +36,7 @@ export async function GET() {
       .order("created_at", { ascending: false }),
     supabase
       .from("submissions")
-      .select("challenge_id, submitted_date")
+      .select("challenge_id, submitted_date, status")
       .eq("user_id", user.id)
       .gte("submitted_date", weekStartStr),
     supabase

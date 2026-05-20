@@ -32,7 +32,7 @@ export interface SubmissionCardData {
   photo_url_2?: string | null;
   title?: string | null;
   description?: string | null;
-  status: "pending" | "approved" | "contested" | "rejected";
+  status: "pending" | "approved" | "contested" | "rejected" | "failed";
   xp_awarded: number;
   created_at: string;
   user: {
@@ -54,10 +54,11 @@ export interface SubmissionCardData {
 }
 
 const statusConfig = {
-  pending:   { label: "Pendente",   icon: Clock,          color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
-  approved:  { label: "Aprovado",   icon: CheckCircle2,   color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-  contested: { label: "Contestado", icon: AlertTriangle,  color: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
-  rejected:  { label: "Rejeitado",  icon: XCircle,        color: "bg-red-500/10 text-red-400 border-red-500/20" },
+  pending:   { label: "Pendente",      icon: Clock,          color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
+  approved:  { label: "Aprovado",      icon: CheckCircle2,   color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
+  contested: { label: "Contestado",    icon: AlertTriangle,  color: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
+  rejected:  { label: "Rejeitado",     icon: XCircle,        color: "bg-red-500/10 text-red-400 border-red-500/20" },
+  failed:    { label: "Não completou", icon: XCircle,        color: "bg-rose-500/10 text-rose-400 border-rose-500/20" },
 };
 
 interface SubmissionCardProps {
