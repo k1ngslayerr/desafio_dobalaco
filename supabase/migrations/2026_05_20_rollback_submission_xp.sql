@@ -28,11 +28,14 @@ DECLARE
   v_photo_url   text;
   v_photo_url_2 text;
 BEGIN
-  -- Lock the row to serialize concurrent deletes of approved submissions
-  SELECT user_id, status, xp_awarded, photo_url, photo_url_2
+  -- Lock the row to serialize concurrent deletes of approved submissions.
+  -- Alias "s" is required: RETURNS TABLE creates implicit output vars named
+  -- photo_url / photo_url_2 that would otherwise make the column references
+  -- ambiguous in stricter Postgres versions.
+  SELECT s.user_id, s.status, s.xp_awarded, s.photo_url, s.photo_url_2
     INTO v_user_id, v_status, v_xp_awarded, v_photo_url, v_photo_url_2
-    FROM public.submissions
-   WHERE id = _submission_id
+    FROM public.submissions AS s
+   WHERE s.id = _submission_id
    FOR UPDATE;
 
   IF NOT FOUND THEN
