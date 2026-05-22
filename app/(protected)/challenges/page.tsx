@@ -766,6 +766,7 @@ export default function ChallengesPage() {
               /* ── Normal submission mode ── */
               <>
                 {selected?.requires_photo ? (
+                  /* ── Foto obrigatória + 2ª opcional ── */
                   <>
                     <div className="space-y-1.5">
                       <Label className="text-xs">
@@ -833,12 +834,39 @@ export default function ChallengesPage() {
                     </div>
                   </>
                 ) : (
-                  <div className="flex items-center gap-3 rounded-lg border border-dashed border-sky-500/30 bg-sky-500/5 px-4 py-3">
-                    <CameraOff className="h-5 w-5 text-sky-400 shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-sky-400">Sem foto necessária</p>
-                      <p className="text-xs text-muted-foreground">Descreva sua conquista abaixo</p>
+                  /* ── Foto opcional (desafio sem foto obrigatória) ── */
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">
+                      Foto{" "}
+                      <span className="text-muted-foreground font-normal">(opcional)</span>
+                    </Label>
+                    <div
+                      className="relative flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 hover:border-violet-500/50 transition-colors overflow-hidden"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {preview ? (
+                        <Image src={preview} alt="Preview" fill className="object-cover" />
+                      ) : (
+                        <>
+                          <ImageIcon className="h-7 w-7 text-muted-foreground/60 mb-1.5" />
+                          <p className="text-xs text-muted-foreground">Clique para adicionar uma foto</p>
+                          <p className="text-xs text-muted-foreground/50">JPEG, PNG, WebP · máx 5 MB</p>
+                        </>
+                      )}
                     </div>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      {...register("photo")}
+                      ref={(el) => {
+                        register("photo").ref(el);
+                        (fileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+                      }}
+                    />
+                    {errors.photo && (
+                      <p className="text-xs text-destructive">{errors.photo.message as string}</p>
+                    )}
                   </div>
                 )}
 
