@@ -6,7 +6,7 @@ import { appWeekStartStr } from "@/lib/date";
 // [SECURITY] Requires an authenticated session. Browser client cannot read
 // public.users directly because the auth cookie is httpOnly and the SELECT
 // policy is restricted to the authenticated role.
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
@@ -30,7 +30,12 @@ export async function GET() {
   // Bulk-fetch art tiers, submission counts, and weekly XP in parallel
   const levels = Array.from(new Set((users ?? []).map((u) => u.level)));
   const userIds = (users ?? []).map((u) => u.id);
-  const weekStart = appWeekStartStr();
+  // Optional ?week=YYYY-MM-DD param for historical weekly views
+  const { searchParams } = new URL(request.url);
+  const weekParam = searchParams.get("week");
+  const weekStart = (weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam))
+    ? weekParam
+    : appWeekStartStr();
 
   const [{ data: levelRows }, { data: subRows }, { data: weeklyRows }] = await Promise.all([
     levels.length
