@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { appWeekStartStr } from "@/lib/date";
 
-// GET /api/ranking – top 100 users by XP, with art_tier resolved.
+// GET /api/ranking – top 100 users by XP, with art_tier and weekly XP resolved.
 // [SECURITY] Requires an authenticated session. Browser client cannot read
 // public.users directly because the auth cookie is httpOnly and the SELECT
 // policy is restricted to the authenticated role.
@@ -24,11 +25,12 @@ export async function GET() {
     return NextResponse.json({ error: "Erro ao buscar ranking" }, { status: 500 });
   }
 
-  // Bulk-fetch art tiers and submission counts in parallel
+  // Bulk-fetch art tiers, submission counts, and weekly XP in parallel
   const levels = Array.from(new Set((users ?? []).map((u) => u.level)));
   const userIds = (users ?? []).map((u) => u.id);
+  const weekStart = appWeekStartStr();
 
-  const [{ data: levelRows }, { data: subRows }] = await Promise.all([
+  const [{ data: levelRows }, { data: subRows }, { data: weeklyRows }] = await Promise.all([
     levels.length
       ? supabase.from("level_config").select("level, art_tier").in("level", levels)
       : Promise.resolve({ data: [] as Array<{ level: number; art_tier: number }> }),
@@ -40,6 +42,15 @@ export async function GET() {
           .in("user_id", userIds)
           .in("status", ["approved", "contested"])
       : Promise.resolve({ data: [] as Array<{ user_id: string; status: string }> }),
+    // Weekly XP: sum xp_awarded from approved submissions since week start
+    userIds.length
+      ? supabase
+          .from("submissions")
+          .select("user_id, xp_awarded")
+          .in("user_id", userIds)
+          .eq("status", "approved")
+          .gte("submitted_date", weekStart)
+      : Promise.resolve({ data: [] as Array<{ user_id: string; xp_awarded: number }> }),
   ]);
 
   const tierMap      = new Map((levelRows ?? []).map((l) => [l.level, l.art_tier]));
@@ -53,12 +64,18 @@ export async function GET() {
     }
   }
 
+  const weeklyXpMap = new Map<string, number>();
+  for (const s of weeklyRows ?? []) {
+    weeklyXpMap.set(s.user_id, (weeklyXpMap.get(s.user_id) ?? 0) + (s.xp_awarded ?? 0));
+  }
+
   const ranking = (users ?? []).map((u) => ({
     ...u,
-    art_tier:      tierMap.get(u.level)      ?? 1,
-    approvedCount: approvedMap.get(u.id)     ?? 0,
-    contestedCount: contestedMap.get(u.id)   ?? 0,
+    art_tier:       tierMap.get(u.level)      ?? 1,
+    approvedCount:  approvedMap.get(u.id)     ?? 0,
+    contestedCount: contestedMap.get(u.id)    ?? 0,
+    weeklyXp:       weeklyXpMap.get(u.id)     ?? 0,
   }));
 
-  return NextResponse.json({ ranking });
+  return NextResponse.json({ ranking, weekStart });
 }

@@ -21,7 +21,10 @@ interface RankEntry {
   art_tier: number;
   approvedCount: number;
   contestedCount: number;
+  weeklyXp: number;
 }
+
+type Tab = "geral" | "semanal";
 
 const medalConfig = [
   { label: "🥇", className: "text-yellow-400 bg-yellow-400/10 border-yellow-400/30" },
@@ -37,7 +40,9 @@ const POLL_INTERVAL_MS = 20_000;
 
 export default function RankingPage() {
   const [ranking, setRanking] = useState<RankEntry[]>([]);
+  const [weekStart, setWeekStart] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>("geral");
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +52,10 @@ export default function RankingPage() {
         const res = await fetch("/api/ranking", { cache: "no-store" });
         if (!res.ok) return;
         const json = await res.json();
-        if (!cancelled) setRanking(json.ranking ?? []);
+        if (!cancelled) {
+          setRanking(json.ranking ?? []);
+          setWeekStart(json.weekStart ?? null);
+        }
       } catch {
         // network blip — try again on the next tick
       } finally {
@@ -64,6 +72,19 @@ export default function RankingPage() {
     };
   }, []);
 
+  // Derive the sorted list based on active tab
+  const list: RankEntry[] =
+    tab === "geral"
+      ? ranking // already sorted by xp desc from the API
+      : [...ranking]
+          .filter((u) => u.weeklyXp > 0)
+          .sort((a, b) => b.weeklyXp - a.weeklyXp);
+
+  // Format week start for display (e.g. "19/05")
+  const weekLabel = weekStart
+    ? new Date(weekStart + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+    : null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -71,19 +92,49 @@ export default function RankingPage() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Trophy className="h-6 w-6 text-yellow-400" /> Ranking
           </h1>
-          <p className="text-muted-foreground mt-1">Top jogadores por XP acumulado</p>
+          <p className="text-muted-foreground mt-1">
+            {tab === "geral"
+              ? "Top jogadores por XP acumulado"
+              : weekLabel
+                ? `XP conquistado desde ${weekLabel}`
+                : "XP conquistado esta semana"}
+          </p>
         </div>
+      </div>
+
+      {/* ── Tabs ──────────────────────────────────────────────────── */}
+      <div className="flex rounded-lg border border-border overflow-hidden w-fit">
+        {(["geral", "semanal"] as Tab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "px-5 py-2 text-sm font-medium transition-colors",
+              tab === t
+                ? "bg-violet-600 text-white"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            {t === "geral" ? "Geral" : "Semanal"}
+          </button>
+        ))}
       </div>
 
       {loading ? (
         <div className="flex justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
+      ) : list.length === 0 && tab === "semanal" ? (
+        <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+          <Trophy className="h-8 w-8 opacity-30" />
+          <p className="text-sm">Nenhum XP registrado esta semana ainda.</p>
+        </div>
       ) : (
         <div className="space-y-2">
-          {ranking.map((user, index) => {
+          {list.map((user, index) => {
             const pos = index + 1;
             const medal = pos <= 3 ? medalConfig[pos - 1] : null;
+            const xpDisplay = tab === "geral" ? user.xp : user.weeklyXp;
 
             return (
               <Link key={user.id} href={`/u/${user.username}`}>
@@ -135,25 +186,27 @@ export default function RankingPage() {
                   {/* Stats */}
                   <div className="text-right shrink-0 space-y-1">
                     <p className="text-sm font-bold text-emerald-400">
-                      {user.xp.toLocaleString()} XP
+                      {xpDisplay.toLocaleString()} XP
                     </p>
                     <p className="text-xs text-muted-foreground">Nível {user.level}</p>
-                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                      {user.approvedCount > 0 && (
-                        <span className="text-[11px] text-muted-foreground">
-                          {user.approvedCount} aprovada{user.approvedCount !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                      {user.contestedCount > 0 && (
-                        <Badge
-                          variant="outline"
-                          className="text-[11px] py-0 px-1.5 h-4 text-orange-400 border-orange-500/30 bg-orange-500/10 gap-1"
-                        >
-                          <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
-                          {user.contestedCount} contestada{user.contestedCount !== 1 ? "s" : ""}
-                        </Badge>
-                      )}
-                    </div>
+                    {tab === "geral" && (
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        {user.approvedCount > 0 && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {user.approvedCount} aprovada{user.approvedCount !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                        {user.contestedCount > 0 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] py-0 px-1.5 h-4 text-orange-400 border-orange-500/30 bg-orange-500/10 gap-1"
+                          >
+                            <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                            {user.contestedCount} contestada{user.contestedCount !== 1 ? "s" : ""}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </Card>
