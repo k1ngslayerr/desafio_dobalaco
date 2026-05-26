@@ -15,8 +15,10 @@ export async function GET() {
 
   const { data: users, error: usersError } = await supabase
     .from("users")
-    // [SECURITY] Only public-safe fields
-    .select("id, username, full_name, avatar_url, xp, level")
+    // [SECURITY] Only public-safe fields. Filter to active users only — suspended
+    // users are removed from the group and should not appear in the ranking.
+    .select("id, username, full_name, avatar_url, xp, level, current_penalty")
+    .eq("status", "active")
     .order("xp", { ascending: false })
     .limit(100);
 
@@ -71,10 +73,11 @@ export async function GET() {
 
   const ranking = (users ?? []).map((u) => ({
     ...u,
-    art_tier:       tierMap.get(u.level)      ?? 1,
-    approvedCount:  approvedMap.get(u.id)     ?? 0,
-    contestedCount: contestedMap.get(u.id)    ?? 0,
-    weeklyXp:       weeklyXpMap.get(u.id)     ?? 0,
+    art_tier:        tierMap.get(u.level)      ?? 1,
+    approvedCount:   approvedMap.get(u.id)     ?? 0,
+    contestedCount:  contestedMap.get(u.id)    ?? 0,
+    weeklyXp:        weeklyXpMap.get(u.id)     ?? 0,
+    current_penalty: u.current_penalty         ?? null,
   }));
 
   return NextResponse.json({ ranking, weekStart });

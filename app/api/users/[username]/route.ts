@@ -17,14 +17,14 @@ export async function GET(
   // Fetch target user
   const { data: target } = await supabase
     .from("users")
-    .select("id, username, full_name, avatar_url, xp, level")
+    .select("id, username, full_name, avatar_url, xp, level, current_penalty")
     .eq("username", username)
     .single();
 
   if (!target) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
-  // Fetch level art tier + next-level threshold
-  const [{ data: lvlData }, { data: nextLvl }, { data: subs }] = await Promise.all([
+  // Fetch level art tier + next-level threshold + submissions + penalty history in parallel
+  const [{ data: lvlData }, { data: nextLvl }, { data: subs }, { data: penaltyHistory }] = await Promise.all([
     supabase
       .from("level_config")
       .select("art_tier, xp_required")
@@ -45,6 +45,13 @@ export async function GET(
       )
       .eq("user_id", target.id)
       .order("created_at", { ascending: false }),
+    // Penalty history — visible to all authenticated group members
+    supabase
+      .from("penalty_history")
+      .select("id, penalty_text, assigned_at, cleared_at")
+      .eq("user_id", target.id)
+      .order("assigned_at", { ascending: false })
+      .limit(20),
   ]);
 
   const currentThreshold = target.level > 1 ? Number(lvlData?.xp_required ?? 0) : 0;
@@ -59,7 +66,8 @@ export async function GET(
       level_xp:  levelXp,
       next_xp:   levelGap,
     },
-    submissions: subs ?? [],
-    currentUserId: me.id,
+    submissions:    subs ?? [],
+    penaltyHistory: penaltyHistory ?? [],
+    currentUserId:  me.id,
   });
 }

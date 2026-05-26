@@ -14,8 +14,10 @@ import { useSignedUrl } from "@/lib/storage/use-signed-url";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { Badge } from "@/components/ui/badge";
 import { resolveReactionUser } from "@/lib/supabase/resolve-embedded";
-import { Loader2, ImageOff, X, FileText, CheckCircle2, Clock, AlertTriangle, XCircle } from "lucide-react";
+import { Loader2, ImageOff, X, FileText, CheckCircle2, Clock, AlertTriangle, XCircle, Gavel } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -29,6 +31,14 @@ interface Profile {
   art_tier: number;
   level_xp: number;
   next_xp: number;
+  current_penalty: string | null;
+}
+
+interface PenaltyRecord {
+  id: string;
+  penalty_text: string;
+  assigned_at: string;
+  cleared_at: string | null;
 }
 
 // ── Status badge config for thumbnails ────────────────────────────────────────
@@ -153,11 +163,12 @@ function PostModal({
 export default function UserProfilePage() {
   const { username } = useParams<{ username: string }>();
 
-  const [profile, setProfile]       = useState<Profile | null>(null);
-  const [submissions, setSubmissions] = useState<SubmissionCardData[]>([]);
+  const [profile, setProfile]           = useState<Profile | null>(null);
+  const [submissions, setSubmissions]   = useState<SubmissionCardData[]>([]);
+  const [penaltyHistory, setPenaltyHistory] = useState<PenaltyRecord[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [loading, setLoading]        = useState(true);
-  const [notFound, setNotFound]      = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [notFound, setNotFound]         = useState(false);
 
   // selected post modal
   const [selected, setSelected]      = useState<SubmissionCardData | null>(null);
@@ -173,6 +184,7 @@ export default function UserProfilePage() {
         const json = await res.json();
         setProfile(json.profile);
         setCurrentUserId(json.currentUserId);
+        setPenaltyHistory(json.penaltyHistory ?? []);
         setSubmissions(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (json.submissions as any[]).map((s) => ({
@@ -277,6 +289,67 @@ export default function UserProfilePage() {
 
       {/* ── Divider ─────────────────────────────────────────────── */}
       <div className="border-t border-border" />
+
+      {/* ── Active penalty ──────────────────────────────────────── */}
+      {profile.current_penalty && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/8 px-4 py-3">
+          <Gavel className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-semibold text-red-400">Punição ativa</p>
+            <p className="text-sm mt-0.5">{profile.current_penalty}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Penalty history ──────────────────────────────────────── */}
+      {penaltyHistory.length > 0 && (
+        <details className="group">
+          <summary className="flex cursor-pointer select-none items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors list-none">
+            <Gavel className="h-4 w-4" />
+            Histórico de punições ({penaltyHistory.length})
+            <span className="text-xs opacity-60 group-open:hidden">▸</span>
+            <span className="text-xs opacity-60 hidden group-open:inline">▾</span>
+          </summary>
+          <div className="mt-3 space-y-2">
+            {penaltyHistory.map((p) => {
+              const isActive = !p.cleared_at;
+              const assignedLabel = format(parseISO(p.assigned_at), "d MMM yyyy", { locale: ptBR });
+              const clearedLabel  = p.cleared_at
+                ? format(parseISO(p.cleared_at), "d MMM yyyy", { locale: ptBR })
+                : null;
+              return (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "flex items-start gap-3 rounded-lg border px-4 py-3 text-sm",
+                    isActive
+                      ? "border-red-500/30 bg-red-500/8"
+                      : "border-border bg-muted/30"
+                  )}
+                >
+                  <Gavel className={cn("h-4 w-4 shrink-0 mt-0.5", isActive ? "text-red-400" : "text-muted-foreground")} />
+                  <div className="flex-1 min-w-0">
+                    <p className={cn("font-medium", isActive ? "text-red-400" : "text-foreground")}>
+                      {p.penalty_text}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Atribuída em {assignedLabel}
+                      {clearedLabel && ` · Cumprida em ${clearedLabel}`}
+                    </p>
+                  </div>
+                  {isActive ? (
+                    <span className="shrink-0 text-[10px] font-semibold text-red-400 bg-red-500/15 border border-red-500/30 rounded px-1.5 py-0.5">
+                      ativa
+                    </span>
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
 
       {/* ── Posts grid ──────────────────────────────────────────── */}
       {submissions.length === 0 ? (

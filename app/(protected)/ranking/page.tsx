@@ -8,7 +8,7 @@ import { LevelArt } from "@/components/LevelArt";
 import { SignedAvatar } from "@/components/SignedAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Loader2, Trophy, AlertTriangle } from "lucide-react";
+import { Loader2, Trophy, AlertTriangle, Gavel } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface RankEntry {
@@ -22,6 +22,7 @@ interface RankEntry {
   approvedCount: number;
   contestedCount: number;
   weeklyXp: number;
+  current_penalty: string | null;
 }
 
 type Tab = "geral" | "semanal";
@@ -177,10 +178,25 @@ export default function RankingPage() {
 
                   {/* Name + level */}
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate">
-                      {user.full_name || user.username}
-                    </p>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className="font-semibold text-sm truncate">
+                        {user.full_name || user.username}
+                      </p>
+                      {user.current_penalty && (
+                        <span
+                          title={user.current_penalty}
+                          className="inline-flex shrink-0 items-center justify-center h-4 w-4 rounded-full bg-red-500/20 text-red-400"
+                        >
+                          <Gavel className="h-2.5 w-2.5" />
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">@{user.username}</p>
+                    {user.current_penalty && (
+                      <p className="text-xs text-red-400 truncate max-w-[160px] mt-0.5">
+                        {user.current_penalty}
+                      </p>
+                    )}
                   </div>
 
                   {/* Stats */}

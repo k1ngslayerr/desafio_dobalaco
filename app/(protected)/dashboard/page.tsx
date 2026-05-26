@@ -8,7 +8,7 @@ import { DashboardFeed } from "@/components/DashboardFeed";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Swords, ArrowRight, Gavel, Rss } from "lucide-react";
+import { Swords, ArrowRight, Gavel, Rss, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,15 @@ export default async function DashboardPage() {
   const nextThreshold = nextLevel?.xp_required ?? (currentThreshold + 100);
   const levelXP = Math.max(0, Number(profile.xp) - Number(currentThreshold));
   const levelGap = Math.max(1, Number(nextThreshold) - Number(currentThreshold));
+
+  // Fetch group penalty settings (visible to all)
+  const { data: appSettings } = await supabase
+    .from("app_settings")
+    .select("group_penalty_text, group_penalty_active")
+    .single();
+
+  const groupPenaltyActive = appSettings?.group_penalty_active ?? false;
+  const groupPenaltyText   = appSettings?.group_penalty_text   ?? null;
 
   // Fetch active challenges the user hasn't submitted to today (daily) or completed this week (weekly)
   // [SECURITY] Use app-timezone dates so the filter matches `submitted_date`
@@ -92,7 +101,22 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      {/* ── Active penalty banner ────────────────────────────── */}
+      {/* ── Group penalty banner ─────────────────────────────── */}
+      {groupPenaltyActive && groupPenaltyText && (
+        <Card className="border-amber-500/50 bg-amber-500/10">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-amber-400 text-sm">Punição do grupo em vigor</p>
+                <p className="text-sm mt-0.5">{groupPenaltyText}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Individual penalty banner ────────────────────────── */}
       {currentPenalty && (
         <Card className="border-red-500/50 bg-red-500/10">
           <CardContent className="p-4">
