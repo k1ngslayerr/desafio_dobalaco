@@ -37,6 +37,15 @@ export async function GET(request: Request) {
     ? weekParam
     : appWeekStartStr();
 
+  // Compute the last day of the selected week (Sunday = weekStart + 6 days)
+  const [wy, wm, wd] = weekStart.split("-").map(Number);
+  const weekEndDate = new Date(Date.UTC(wy, wm - 1, wd + 6));
+  const weekEnd = [
+    weekEndDate.getUTCFullYear(),
+    String(weekEndDate.getUTCMonth() + 1).padStart(2, "0"),
+    String(weekEndDate.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+
   const [{ data: levelRows }, { data: subRows }, { data: weeklyRows }] = await Promise.all([
     levels.length
       ? supabase.from("level_config").select("level, art_tier").in("level", levels)
@@ -49,7 +58,7 @@ export async function GET(request: Request) {
           .in("user_id", userIds)
           .in("status", ["approved", "contested"])
       : Promise.resolve({ data: [] as Array<{ user_id: string; status: string }> }),
-    // Weekly XP: sum xp_awarded from approved submissions since week start
+    // Weekly XP: sum xp_awarded from approved submissions within the exact 7-day window
     userIds.length
       ? supabase
           .from("submissions")
@@ -57,6 +66,7 @@ export async function GET(request: Request) {
           .in("user_id", userIds)
           .eq("status", "approved")
           .gte("submitted_date", weekStart)
+          .lte("submitted_date", weekEnd)
       : Promise.resolve({ data: [] as Array<{ user_id: string; xp_awarded: number }> }),
   ]);
 
