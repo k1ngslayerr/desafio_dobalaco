@@ -14,7 +14,7 @@ async function requireAdmin() {
 }
 
 // GET /api/admin/users – list all users ordered by status (pending first) then XP
-export async function GET(request: Request) {
+export async function GET() {
   const { error, status, supabase } = await requireAdmin();
   if (error) return NextResponse.json({ error }, { status });
 

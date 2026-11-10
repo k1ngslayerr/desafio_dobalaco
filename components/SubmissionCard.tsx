@@ -82,7 +82,7 @@ export function SubmissionCard({ data, showChallenge = false }: SubmissionCardPr
   const [localTitle,        setLocalTitle]        = useState(data.title ?? null);
   const [localDescription,  setLocalDescription]  = useState(data.description ?? null);
   const [localPhotoUrl,     setLocalPhotoUrl]      = useState(data.photo_url   ?? null);
-  const [localPhotoUrl2,    setLocalPhotoUrl2]     = useState(data.photo_url_2 ?? null);
+  const localPhotoUrl2 = data.photo_url_2 ?? null;
 
   const cfg = statusConfig[data.status];
   const StatusIcon = cfg.icon;

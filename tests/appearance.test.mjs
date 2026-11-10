@@ -68,12 +68,32 @@ test("system preference affects automatic themes, while a custom black backgroun
   assert.deepEqual(resolveAppearance(custom, true), resolveAppearance(custom, false));
 });
 
+test("saturated backgrounds keep tonal surfaces instead of nearly white cards", () => {
+  const channels = (color) => color.slice(1).match(/../g).map((value) => parseInt(value, 16));
+  const chroma = (color) => Math.max(...channels(color)) - Math.min(...channels(color));
+  for (const background of ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#00FFFF", "#FF00FF", "#E54477", "#00A6B6"]) {
+    for (const accent of ["#3158CF", "#FFFFFF", "#000000"]) {
+      const { variables: v } = createAppearancePalette(background, accent);
+      for (const surface of [v["--appearance-surface"], v["--appearance-soft"]]) {
+        assert.ok(chroma(surface) >= chroma(background) * .8, `${background}: ${surface} lost the background colour`);
+        const original = channels(background), result = channels(surface);
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+          if (original[i] > original[j]) assert.ok(result[i] > result[j], `${background}: ${surface} changed hue`);
+        }
+      }
+    }
+  }
+  const neutral = createAppearancePalette("#F5F6F8", "#3158CF").variables["--appearance-surface"];
+  assert.ok(channels(neutral).every((channel) => channel >= 250), "neutral light theme should retain light cards");
+});
+
 test("pre-hydration bootstrap produces the same theme and tolerates damaged/blocked storage", () => {
   const cases = [
     { stored: null, systemDark: false, expected: DEFAULT_APPEARANCE },
     { stored: "{broken", systemDark: true, expected: DEFAULT_APPEARANCE },
     { stored: JSON.stringify({ ...DEFAULT_APPEARANCE, accent: "red" }), systemDark: false, expected: DEFAULT_APPEARANCE },
     { stored: JSON.stringify({ ...DEFAULT_APPEARANCE, mode: "custom", background: "#000000", accent: "#FFFF00" }), systemDark: false, expected: { ...DEFAULT_APPEARANCE, mode: "custom", background: "#000000", accent: "#FFFF00" } },
+    { stored: JSON.stringify({ ...DEFAULT_APPEARANCE, mode: "custom", background: "#00FF00" }), systemDark: false, expected: { ...DEFAULT_APPEARANCE, mode: "custom", background: "#00FF00" } },
     { blocked: true, systemDark: true, expected: DEFAULT_APPEARANCE },
   ];
   for (const entry of cases) {

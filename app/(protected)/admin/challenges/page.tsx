@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { input } from "zod";
 import { challengeSchema, type ChallengeInput } from "@/lib/validators";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,9 +103,8 @@ export default function AdminChallengesPage() {
   const [deleting, setDeleting] = useState<Challenge | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<Challenge | null>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { register, handleSubmit, reset, control, setValue, formState: { errors } } = useForm<ChallengeInput>({
-    resolver: zodResolver(challengeSchema) as any,
+  const { register, handleSubmit, reset, control, setValue, formState: { errors } } = useForm<input<typeof challengeSchema>, unknown, ChallengeInput>({
+    resolver: zodResolver(challengeSchema),
     defaultValues: DEFAULT_VALUES,
   });
 

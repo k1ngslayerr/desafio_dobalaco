@@ -81,7 +81,6 @@ export default function AdminPenaltiesPage() {
 
   // Excuse (atestado) state
   const [excuses, setExcuses] = useState<Excuse[]>([]);
-  const [excuseReason, setExcuseReason] = useState("");
   // Track in-progress toggle as "userId:date"
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
 
@@ -196,7 +195,7 @@ export default function AdminPenaltiesPage() {
         const res = await fetch("/api/admin/excuses", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: userId, excuse_date: date, reason: excuseReason.trim() || undefined }),
+          body: JSON.stringify({ user_id: userId, excuse_date: date }),
         });
         const json = await res.json();
         if (!res.ok) { toast.error(json.error ?? "Erro ao criar atestado"); return; }

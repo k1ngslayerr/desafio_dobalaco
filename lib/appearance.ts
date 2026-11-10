@@ -45,7 +45,12 @@ export function createAppearancePalette(background: string, accent: string) {
   };
   const pole = contrast(background, "#FFFFFF") > contrast(background, "#000000") ? "#FFFFFF" : "#000000";
   const dark = pole === "#FFFFFF";
-  let surface = dark ? mix(background, "#FFFFFF", .065) : mix(background, "#FFFFFF", .96);
+  // Neutral light themes retain white cards. As the background gains chroma,
+  // keep surfaces in its colour family instead of washing them out to white.
+  const channels = rgb(background);
+  const chroma = (Math.max(...channels) - Math.min(...channels)) / 255;
+  const lightSurfaceMix = .96 + (.065 - .96) * Math.min(1, chroma / .12);
+  let surface = mix(background, "#FFFFFF", dark ? .065 : lightSurfaceMix);
   let soft = dark ? mix(background, "#FFFFFF", .10) : mix(background, "#000000", .035);
   // At middle luminances, brightening a dark surface can break white text.
   // Move those surfaces toward the opposite pole instead of crossing the limit.

@@ -9,7 +9,6 @@ import { LevelArt } from "@/components/LevelArt";
 import { XPBar } from "@/components/XPBar";
 import { SignedAvatar } from "@/components/SignedAvatar";
 import { SubmissionCard, type SubmissionCardData } from "@/components/SubmissionCard";
-import { PhotoLightbox } from "@/components/PhotoLightbox";
 import { useSignedUrl } from "@/lib/storage/use-signed-url";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { Badge } from "@/components/ui/badge";

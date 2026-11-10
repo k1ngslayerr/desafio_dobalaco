@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { adminLimiter } from "@/lib/rate-limit";
 import { challengeSchema } from "@/lib/validators";
 
-async function requireAdmin(request: Request) {
+async function requireAdmin() {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return { error: "Não autorizado", status: 401, supabase: null, user: null };
@@ -15,8 +15,8 @@ async function requireAdmin(request: Request) {
 }
 
 // GET /api/admin/challenges – list all challenges (including inactive)
-export async function GET(request: Request) {
-  const { error, status, supabase } = await requireAdmin(request);
+export async function GET() {
+  const { error, status, supabase } = await requireAdmin();
   if (error) return NextResponse.json({ error }, { status });
 
   const { data, error: dbError } = await supabase!
@@ -38,7 +38,7 @@ const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 // per day, appending the day abbreviation to the title (e.g. "Leitura - Seg").
 // Single-day and weekly/streak challenges are created as one row as before.
 export async function POST(request: Request) {
-  const { error, status, supabase, user } = await requireAdmin(request);
+  const { error, status, supabase, user } = await requireAdmin();
   if (error) return NextResponse.json({ error }, { status });
 
   const { success: rateOk } = await adminLimiter.limit(user!.id);

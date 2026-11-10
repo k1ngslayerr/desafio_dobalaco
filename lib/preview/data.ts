@@ -1,11 +1,12 @@
 import { appDateStr, appWeekStartStr, datePlusDays } from "@/lib/date";
 import type { Database } from "@/lib/supabase/types";
 import type { SubmissionCardData } from "@/components/SubmissionCard";
+import type { ChallengeCategory } from "./categories";
 
 type User = Database["public"]["Tables"]["users"]["Row"] & {
   current_penalty: string | null;
 };
-type Challenge = Database["public"]["Tables"]["challenges"]["Row"];
+type Challenge = Database["public"]["Tables"]["challenges"]["Row"] & { category: ChallengeCategory };
 
 export const previewUser: User = {
   id: "10000000-0000-4000-8000-000000000001",
@@ -24,6 +25,7 @@ export const previewUsers: User[] = [
 ];
 
 const challengeBase: Challenge = {
+  category: "treinos",
   id: "20000000-0000-4000-8000-000000000001",
   title: "Movimente-se por 30 minutos",
   description: "Vale caminhada, corrida, bicicleta ou aquele treino que você gosta. Registre seu momento e inspire o grupo.",
@@ -35,11 +37,11 @@ const challengeBase: Challenge = {
 
 export const previewChallenges: Challenge[] = [
   challengeBase,
-  { ...challengeBase, id: "20000000-0000-4000-8000-000000000002", title: "Leia 20 páginas", description: "Reserve um tempo para um livro e compartilhe uma ideia que ficou com você.", requires_photo: false, xp_reward: 80 },
+  { ...challengeBase, category: "leitura", id: "20000000-0000-4000-8000-000000000002", title: "Leia 20 páginas", description: "Reserve um tempo para um livro e compartilhe uma ideia que ficou com você.", requires_photo: false, xp_reward: 80 },
   { ...challengeBase, id: "20000000-0000-4000-8000-000000000003", title: "Treine três vezes na semana", description: "Construa sua rotina com três treinos no seu ritmo.", frequency: "weekly", weekly_target: 3, xp_reward: 150 },
-  { ...challengeBase, id: "20000000-0000-4000-8000-000000000004", title: "Uma semana de hidratação", description: "Beba água ao longo do dia e mantenha sua sequência.", frequency: "streak", requires_photo: false, xp_reward: 60 },
+  { ...challengeBase, category: "bem-estar", id: "20000000-0000-4000-8000-000000000004", title: "Uma semana de hidratação", description: "Beba água ao longo do dia e mantenha sua sequência.", frequency: "streak", requires_photo: false, xp_reward: 60 },
   { ...challengeBase, id: "20000000-0000-4000-8000-000000000005", title: "Cada quilômetro conta", description: "Some os quilômetros da sua caminhada ou corrida de hoje.", quantity_label: "Quilômetros", xp_per_unit: 25, max_quantity: 20, xp_reward: 25 },
-  { ...challengeBase, id: "20000000-0000-4000-8000-000000000006", title: "Prepare uma refeição colorida", description: "Experimente uma receita com ingredientes frescos e mostre o resultado.", xp_reward: 120 },
+  { ...challengeBase, category: "alimentacao", id: "20000000-0000-4000-8000-000000000006", title: "Prepare uma refeição colorida", description: "Experimente uma receita com ingredientes frescos e mostre o resultado.", xp_reward: 120 },
 ];
 
 export const previewSettings = {

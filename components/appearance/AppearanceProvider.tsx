@@ -6,7 +6,6 @@ import { APPEARANCE_KEY, DEFAULT_APPEARANCE, parseAppearance, resolveAppearance,
 import { AppearancePanel } from "./AppearancePanel";
 
 type AppearanceContextValue = {
-  settings: AppearanceSettings;
   active: AppearanceSettings;
   systemDark: boolean;
   dark: boolean;
@@ -16,7 +15,6 @@ type AppearanceContextValue = {
   preview: (settings: AppearanceSettings) => void;
   cancel: () => void;
   save: () => void;
-  storageMessage: string;
 };
 
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
@@ -92,7 +90,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     setDraft(null);
   }, [draft]);
 
-  return <AppearanceContext.Provider value={{ settings, active, systemDark, dark: palette.dark, ready, open: !!draft, openPanel, preview: setDraft, cancel, save, storageMessage }}>
+  return <AppearanceContext.Provider value={{ active, systemDark, dark: palette.dark, ready, open: !!draft, openPanel, preview: setDraft, cancel, save }}>
     {children}
     <AppearancePanel />
     {storageMessage && !draft && <div className="appearance-notice" role="status">{storageMessage}<button onClick={() => setStorageMessage("")} aria-label="Fechar aviso de aparência">×</button></div>}

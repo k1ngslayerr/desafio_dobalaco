@@ -40,7 +40,7 @@ function ColorField({ label, description, value, onChange, onValidity }: {
 // Open/close remounts the fields: partial invalid input never leaks into a
 // reopened panel, and cancelling always restores the last saved settings.
 function PanelContents() {
-  const { active, systemDark, dark, preview, cancel, save } = useAppearance();
+  const { active, systemDark, preview, cancel, save } = useAppearance();
   const [validBackground, setValidBackground] = useState(true);
   const [validAccent, setValidAccent] = useState(true);
   const [fieldVersion, setFieldVersion] = useState(0);
@@ -89,7 +89,7 @@ function PanelContents() {
       <p className="appearance-help">A prévia já está aplicada ao site. Textos e superfícies se ajustam para manter o contraste.</p>
       <button type="button" className="appearance-reset" onClick={() => { preview({ ...DEFAULT_APPEARANCE }); resetFields(); }}><RotateCcw size={14} />Restaurar padrão</button>
     </div>
-    <footer className="appearance-footer"><p><span className={`appearance-status-dot ${dark ? "is-dark" : ""}`} />Preferência deste navegador</p><div><button type="button" className="appearance-button secondary" onClick={cancel}>Cancelar</button><button type="button" className="appearance-button primary" disabled={!validBackground || !validAccent} onClick={save}><Check size={16} />Salvar aparência</button></div></footer>
+    <footer className="appearance-footer"><p><span className="appearance-status-dot" />Preferência deste navegador</p><div><button type="button" className="appearance-button secondary" onClick={cancel}>Cancelar</button><button type="button" className="appearance-button primary" disabled={!validBackground || !validAccent} onClick={save}><Check size={16} />Salvar aparência</button></div></footer>
   </>;
 }
 

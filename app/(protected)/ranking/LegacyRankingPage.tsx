@@ -123,7 +123,7 @@ export default function RankingPage() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [selectedWeekStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedWeekStart]);
 
   // ── Derived state ──────────────────────────────────────────────────────────
 

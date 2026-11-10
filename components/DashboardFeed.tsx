@@ -50,7 +50,6 @@ export function DashboardFeed({ currentUserId }: DashboardFeedProps) {
 
   // Initial load
   useEffect(() => {
-    setLoading(true);
     fetchPage().then((data) => {
       if (data) {
         setSubmissions(data.submissions);

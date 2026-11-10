@@ -5,6 +5,31 @@ desafios, ranking e perfil. A direção A foi escolhida e agora é a base das qu
 rotas principais no modo UI, com [aparência personalizável](appearance.md).
 A direção B permanece como referência da exploração anterior.
 
+O feed do modo UI permite combinar **Todos / Meus registros** com uma faixa
+de tipos: **Treinos, Alimentação, Leitura e Bem-estar**. A contagem acompanha
+os filtros e listas vazias oferecem **Limpar filtros**. No celular, a faixa
+rola horizontalmente. As categorias são metadados explícitos da demonstração
+em `lib/preview/categories.ts` e `lib/preview/data.ts`; ainda não fazem parte
+do schema ou das APIs reais. Novos check-ins locais herdam o tipo do desafio.
+As fixtures dos posts ficam em `lib/preview/feed.ts`. A revisão de código e
+as limitações da validação estão em [frontend-review.md](frontend-review.md).
+
+Os posts do Clube ficam em uma coluna central de até 640 px no feed (560 px
+no histórico do perfil), com a evidência abaixo
+do texto e ocupando a largura do post. Fotos mantêm a proporção e aparecem
+inteiras com `object-fit: contain`, limitadas a 560 px de altura no desktop e
+480 px no celular. Posts com duas fotos mostram uma por vez, com contador,
+controles de anterior/próxima e ampliação individual. Autoria, status, XP e
+reações preservam a hierarquia da interface.
+
+O feed usa a proposta **B com apoio lateral**: título, check-in, filtros e posts
+compartilham o mesmo eixo. O centro da coluna coincide com o centro da tela:
+a largura da navegação é compensada no espaço à direita. Progresso e ranking
+ocupam essa margem sem deslocar os posts.
+A lateral mostra apenas **Seu progresso** e **Ranking da semana**, sem cartões
+promocionais. Abaixo de 1360 px, o botão **Progresso e ranking** abre esse apoio
+em um diálogo acessível. Outras telas e as vistas anteriores mantêm sua navegação.
+
 ## Contrato de design
 
 Público: participantes de um grupo de desafios de hábitos. Tarefa central:
@@ -58,7 +83,7 @@ não usuários reais. Fontes das imagens (identificadores do CDN Unsplash):
 `photo-1494790108377-be9c29b29330`, `photo-1500648767791-00dcc994a43e`,
 `photo-1506794778202-cad84cf45f1d`, `photo-1534528741775-53994a69daeb`.
 
-## Verificação desta entrega
+## Verificação da exploração original
 
 - `npm run build:ui` passou, incluindo a checagem TypeScript.
 - Oito combinações de tela/direção inspecionadas no navegador em desktop
@@ -76,5 +101,5 @@ não usuários reais. Fontes das imagens (identificadores do CDN Unsplash):
   direção e comparação móvel. Não são imagens geradas por IA.
 - As rotas originais não foram substituídas. Os protótipos são acessíveis
   somente no modo UI e usam estado local, sem CRUD real nem persistência.
-- O lint do repositório tem o bloqueio de configuração já identificado na
-  etapa anterior; não é apresentado como aprovado nesta entrega.
+- Na exploração original, o lint estava bloqueado pela configuração. O estado
+  posterior está registrado na revisão de código acima.

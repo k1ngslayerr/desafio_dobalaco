@@ -20,6 +20,8 @@ no cabeçalho móvel. Não são necessárias credenciais de Supabase.
   texto, estados e cores de foco são calculados a partir delas. Botões do
   Clube usam a acentuação exata, com texto preto ou branco conforme o contraste.
   Texto colorido e componentes antigos podem receber ajuste de luminosidade.
+- Fundos saturados mantêm cartões e superfícies na mesma família de cor,
+  sem convertê-los em branco. Fundos claros neutros preservam cartões claros.
 - A mesma paleta alcança portais de modais, notificações e tokens semânticos
   das páginas anteriores. Os status de sucesso, atenção e erro mantêm suas
   funções; não são convertidos na acentuação escolhida.
@@ -59,5 +61,6 @@ outros modais e desaparece automaticamente.
 O build passou; 21 rotas (incluindo as quatro vistas anteriores) responderam
 normalmente. O bootstrap extraído do HTML de produção também foi executado
 isoladamente e produziu a mesma paleta testada. Capturas em
-`artifacts/appearance`. O lint continua com o bloqueio de configuração já
-existente no repositório; não é apresentado como aprovado.
+`artifacts/appearance`. Esses resultados descrevem a entrega original. O
+estado atual do lint e os limites da validação estão registrados em
+[frontend-review.md](frontend-review.md).

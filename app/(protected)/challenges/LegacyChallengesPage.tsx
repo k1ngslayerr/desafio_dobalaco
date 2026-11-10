@@ -6,7 +6,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -181,7 +180,6 @@ function ChallengeCardItem({ ch, isGrace, onDismiss, onOpen }: ChallengeCardItem
 // ── Page component ────────────────────────────────────────────────────────────
 
 export default function ChallengesPage() {
-  const router = useRouter();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [scheduled, setScheduled] = useState<ScheduledChallenge[]>([]);
   const [currentPenalty, setCurrentPenalty] = useState<string | null>(null);
