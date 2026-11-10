@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "./ui-lab/ui-lab.css";
+import "@/components/appearance/appearance.css";
+import { AppearanceProvider } from "@/components/appearance/AppearanceProvider";
+import { appearanceBootstrap } from "@/lib/appearance";
 import { Toaster } from "@/components/ui/sonner";
+import { UIPreviewNav } from "@/components/UIPreviewNav";
+import { isUiPreview } from "@/lib/ui-preview";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,8 +37,11 @@ export default function RootLayout({
   return (
     // Dark mode is applied by default via className="dark"
     <html lang="pt-BR" className={`dark ${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: appearanceBootstrap }} /></head>
       <body className="min-h-screen antialiased bg-background text-foreground">
+        <AppearanceProvider>
         {children}
+        {isUiPreview && <UIPreviewNav />}
 
         {/* Global toast notification system */}
         <Toaster
@@ -41,6 +50,7 @@ export default function RootLayout({
           closeButton
           toastOptions={{ duration: 4000 }}
         />
+        </AppearanceProvider>
       </body>
     </html>
   );

@@ -24,6 +24,7 @@ import {
 import { LevelArt } from "@/components/LevelArt";
 import { useSignedUrl } from "@/lib/storage/use-signed-url";
 import { cn } from "@/lib/utils";
+import { AppearanceTrigger } from "@/components/appearance/AppearanceProvider";
 
 const NAV_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -104,6 +105,7 @@ export function Navbar({ user }: NavbarProps) {
           )}
         </nav>
 
+        <AppearanceTrigger compact />
         {/* User dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger

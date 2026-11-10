@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useState } from "react";
+import { isUiPreview } from "@/lib/ui-preview";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -30,6 +31,11 @@ export default function RegisterPage() {
   });
 
   async function onSubmit(values: RegisterInput) {
+    if (isUiPreview) {
+      toast.info("Cadastro simulado. Nenhuma conta foi criada.");
+      router.push("/pending");
+      return;
+    }
     setIsLoading(true);
     try {
       const { createClient } = await import("@/lib/supabase/client");

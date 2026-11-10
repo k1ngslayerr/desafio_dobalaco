@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { createServerClient } from "@supabase/ssr";
+import { isUiPreview } from "@/lib/ui-preview";
+import { previewApi } from "@/lib/preview/api";
 
 // [SECURITY] Route protection matrix:
 // - Public paths: accessible without a session (/login, /register, /auth/callback)
@@ -30,6 +32,14 @@ function isAdminPath(pathname: string) {
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (isUiPreview) {
+    if (pathname.startsWith("/api/")) return previewApi(request);
+    if (pathname === "/auth/callback") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    return NextResponse.next();
+  }
 
   // Let static assets and Next.js internals pass through immediately
   if (

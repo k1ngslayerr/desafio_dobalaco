@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isUiPreview } from "@/lib/ui-preview";
 import { SubmissionCard, type SubmissionCardData } from "@/components/SubmissionCard";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
@@ -35,7 +36,7 @@ export function DashboardFeed({ currentUserId }: DashboardFeedProps) {
   const submissionsRef = useRef<SubmissionCardData[]>([]);
   useEffect(() => { submissionsRef.current = submissions; }, [submissions]);
 
-  const supabase = useRef(createClient()).current;
+  const supabase = useRef(isUiPreview ? null : createClient()).current;
 
   // ── Fetch helpers ──────────────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ export function DashboardFeed({ currentUserId }: DashboardFeedProps) {
   // ── Realtime ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    if (!supabase) return;
     const channel = supabase
       .channel("dashboard-feed")
 

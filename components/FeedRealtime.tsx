@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isUiPreview } from "@/lib/ui-preview";
 import { SubmissionCard, type SubmissionCardData } from "@/components/SubmissionCard";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -24,13 +25,14 @@ export function FeedRealtime({
 }: FeedRealtimeProps) {
   const [submissions, setSubmissions] = useState<SubmissionCardData[]>(initialSubmissions);
   const [connected, setConnected] = useState(false);
-  const supabase = useRef(createClient()).current;
+  const supabase = useRef(isUiPreview ? null : createClient()).current;
 
   // `initialSubmissions` is provided once by the server-rendered parent and
   // does not change at runtime; we intentionally don't sync it back into
   // state to avoid clobbering new realtime arrivals.
 
   useEffect(() => {
+    if (!supabase) return;
     const channel = supabase
       .channel(`challenge:${challengeId}`)
       .on(
@@ -152,7 +154,9 @@ export function FeedRealtime({
     <div className="space-y-4">
       {/* Realtime indicator */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {connected ? (
+        {isUiPreview ? (
+          <span>Prévia com dados fictícios</span>
+        ) : connected ? (
           <>
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             Ao vivo

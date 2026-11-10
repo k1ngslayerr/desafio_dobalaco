@@ -1,3 +1,7 @@
+import { isUiPreview } from "@/lib/ui-preview";
+import { LegacyPreviewFrame } from "@/components/club/LegacyPreviewFrame";
+import { ClubPreviewPage } from "@/components/club/ClubPreviewPage";
+import { getPreviewDashboard } from "@/lib/preview/data";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
@@ -13,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+async function loadDashboardData() {
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -98,6 +102,20 @@ export default async function DashboardPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const currentPenalty = (profile as any)?.current_penalty as string | null ?? null;
+
+  return { user, profile, artTier, levelXP, levelGap, groupPenaltyActive, groupPenaltyText, currentPenalty, openChallenges };
+}
+
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+  const params = await searchParams;
+  if (isUiPreview && params.view !== "original") return <ClubPreviewPage screen="feed" />;
+  const content = await DashboardContent();
+  return isUiPreview ? <LegacyPreviewFrame>{content}</LegacyPreviewFrame> : content;
+}
+
+async function DashboardContent() {
+  const { user, profile, artTier, levelXP, levelGap, groupPenaltyActive, groupPenaltyText, currentPenalty, openChallenges } =
+    isUiPreview ? getPreviewDashboard() : await loadDashboardData();
 
   return (
     <div className="space-y-8">

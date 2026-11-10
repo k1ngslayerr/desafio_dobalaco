@@ -1,3 +1,5 @@
+import { isUiPreview } from "@/lib/ui-preview";
+import { getPreviewChallenge } from "@/lib/preview/data";
 import { notFound, redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { FeedRealtime } from "@/components/FeedRealtime";
@@ -14,8 +16,7 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
-export default async function ChallengeFeedPage({ params }: Props) {
-  const { id } = await params;
+async function loadChallengeData(id: string) {
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -65,6 +66,15 @@ export default async function ChallengeFeedPage({ params }: Props) {
       )?.type as "positive" | "negative" | null ?? null,
     currentUserId: user.id,
   }));
+
+  return { user, challenge, initialSubmissions };
+}
+
+export default async function ChallengeFeedPage({ params }: Props) {
+  const { id } = await params;
+  const data = isUiPreview ? getPreviewChallenge(id) : await loadChallengeData(id);
+  if (!data) notFound();
+  const { user, challenge, initialSubmissions } = data;
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,6 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
+import { isUiPreview } from "@/lib/ui-preview";
 
 // [SECURITY] All env vars validated at startup; missing vars throw before serving requests
 export const env = createEnv({
@@ -23,5 +24,5 @@ export const env = createEnv({
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   },
-  skipValidation: !!process.env.SKIP_ENV_VALIDATION,
+  skipValidation: isUiPreview || !!process.env.SKIP_ENV_VALIDATION,
 });

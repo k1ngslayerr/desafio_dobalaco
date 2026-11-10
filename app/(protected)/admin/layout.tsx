@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { ShieldCheck, Swords, ListChecks, Users, Gavel } from "lucide-react";
+import { isUiPreview } from "@/lib/ui-preview";
 
 const ADMIN_TABS = [
   { href: "/admin/challenges",  label: "Desafios",   icon: Swords },
@@ -15,19 +16,21 @@ const ADMIN_TABS = [
 // [SECURITY] Double-checked: middleware guards /admin/* but we re-verify here
 // in case middleware is bypassed (defense-in-depth)
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  const supabase = await createClient();
+  if (!isUiPreview) {
+    const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+    const { data: profile } = await supabase
+      .from("users")
+      .select("role")
+      .eq("id", user.id)
+      .single();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if ((profile as any)?.role !== "admin") redirect("/dashboard");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((profile as any)?.role !== "admin") redirect("/dashboard");
+  }
 
   return (
     <div className="space-y-6">

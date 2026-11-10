@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isUiPreview } from "@/lib/ui-preview";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -41,9 +42,13 @@ interface GoogleButtonProps {
 
 export function GoogleButton({ label = "Continuar com Google" }: GoogleButtonProps) {
   const [loading, setLoading] = useState(false);
-  const supabase = createClient();
 
   async function handleGoogleLogin() {
+    if (isUiPreview) {
+      window.location.assign("/dashboard");
+      return;
+    }
+    const supabase = createClient();
     setLoading(true);
     try {
       const { error } = await supabase.auth.signInWithOAuth({
